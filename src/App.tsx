@@ -1712,13 +1712,27 @@ const DEFAULT_ADMIN: import('./types').AdminSettings = {
 };
 
 // ── Supabase REST helpers (no SDK) ────────────────────────────────────────────
+
+// PUBLIC Supabase credentials — hardcoded so ALL visitors can read site settings.
+// The anon/public key is safe to expose in client-side code (it's read-only by design).
+// Update these two values to match your Supabase project.
+const PUBLIC_SUPABASE_URL = 'https://ingmrcsjmydxqmpswfae.supabase.co';
+const PUBLIC_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImluZ21yY3NqbXlkeHFtcHN3ZmFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4NDE4OTksImV4cCI6MjA5NjQxNzg5OX0.7MsQoABUxwu1LIX38fa6pX0IjozMeKjaj6PweQu58pc';
+
 function getSupaCreds(): { url: string; key: string } | null {
+  // 1. Admin's browser-stored creds (set via admin panel Connection tab)
   try {
     const raw = localStorage.getItem(SB_CREDS_KEY);
-    if (!raw) return null;
-    const { url, key } = JSON.parse(raw);
-    return url && key ? { url, key } : null;
-  } catch { return null; }
+    if (raw) {
+      const { url, key } = JSON.parse(raw);
+      if (url && key) return { url, key };
+    }
+  } catch { /* fall through */ }
+  // 2. Hardcoded public credentials — used by every visitor automatically
+  if (PUBLIC_SUPABASE_URL && PUBLIC_SUPABASE_ANON_KEY) {
+    return { url: PUBLIC_SUPABASE_URL, key: PUBLIC_SUPABASE_ANON_KEY };
+  }
+  return null;
 }
 
 function saveSupaCreds(url: string, key: string) {
