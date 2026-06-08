@@ -763,7 +763,45 @@ function ConverterPage() {
   // Load admin settings live from Supabase (so every visitor gets latest)
   const [adminSettings, setAdminSettings] = useState<import('./types').AdminSettings>(DEFAULT_ADMIN);
   useEffect(() => {
-    fetchPublicSettings().then(s => { if (s) setAdminSettings(s); });
+    fetchPublicSettings().then(s => {
+      if (s) {
+        setAdminSettings(s);
+        // Inject Google AdSense script when adsEnabled
+        if (s.adsEnabled && !document.getElementById('adsense-script')) {
+          const script = document.createElement('script');
+          script.id = 'adsense-script';
+          script.async = true;
+          script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7120952836131032';
+          script.crossOrigin = 'anonymous';
+          document.head.appendChild(script);
+        }
+        // Inject custom adNetworkScript from admin panel if set
+        if (s.adNetworkScript && !document.getElementById('ad-network-script')) {
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = s.adNetworkScript;
+          const scriptEl = wrapper.querySelector('script');
+          if (scriptEl) {
+            const newScript = document.createElement('script');
+            newScript.id = 'ad-network-script';
+            if (scriptEl.src) newScript.src = scriptEl.src;
+            if (scriptEl.async) newScript.async = true;
+            if ((scriptEl as any).crossOrigin) newScript.crossOrigin = (scriptEl as any).crossOrigin;
+            newScript.innerHTML = scriptEl.innerHTML;
+            document.head.appendChild(newScript);
+          }
+        }
+        // Inject adNetworkMeta tag if set
+        if (s.adNetworkMeta && !document.getElementById('ad-network-meta')) {
+          const wrapper2 = document.createElement('div');
+          wrapper2.innerHTML = s.adNetworkMeta;
+          const metaEl = wrapper2.querySelector('meta');
+          if (metaEl) {
+            metaEl.id = 'ad-network-meta';
+            document.head.appendChild(metaEl);
+          }
+        }
+      }
+    });
   }, []);
   const allColors = useMemo(() => [
     ...COLORS,
@@ -1689,7 +1727,7 @@ const ADMIN_PW_KEY = 'writeify_admin_pw';
 
 const DEFAULT_ADMIN: import('./types').AdminSettings = {
   password: 'Saaki008@@',
-  publisherId: '',
+  publisherId: 'ca-pub-7120952836131032',
   adSlot1: '',
   adSlot2: '',
   adSlot3: '',
