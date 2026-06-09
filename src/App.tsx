@@ -789,6 +789,31 @@ Gravity of Sun keeps all planets in orbit.`;
           script.crossOrigin = 'anonymous';
           document.head.appendChild(script);
         }
+        // Inject @font-face for any custom uploaded fonts (TTF/OTF/WOFF/WOFF2)
+        if (s.customFonts && s.customFonts.length > 0) {
+          s.customFonts.forEach(f => {
+            if (f.src) {
+              // Only inject if not already injected
+              const styleId = `custom-font-${f.family.replace(/\s+/g, '-')}`;
+              if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.textContent = `@font-face { font-family: '${f.family}'; src: url('${f.src}') format('${f.format || 'truetype'}'); font-display: swap; }`;
+                document.head.appendChild(style);
+              }
+            } else {
+              // Google Font — inject link tag
+              const linkId = `google-font-${f.family.replace(/\s+/g, '-')}`;
+              if (!document.getElementById(linkId)) {
+                const link = document.createElement('link');
+                link.id = linkId;
+                link.rel = 'stylesheet';
+                link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(f.family)}&display=swap`;
+                document.head.appendChild(link);
+              }
+            }
+          });
+        }
         // Inject custom adNetworkScript from admin panel if set
         if (s.adNetworkScript && !document.getElementById('ad-network-script')) {
           const wrapper = document.createElement('div');
@@ -2046,6 +2071,154 @@ async function pushToSupabase(
   } catch { return false; }
 }
 
+// ── UploadFontSection — Upload TTF/OTF/WOFF/WOFF2 custom fonts ────────────────
+function UploadFontSection({
+  settings,
+  save,
+}: {
+  settings: import('./types').AdminSettings;
+  save: (patch: Partial<import('./types').AdminSettings>, msg?: string) => void;
+}) {
+  const [uploadLabel, setUploadLabel] = React.useState('');
+  const [uploadFamily, setUploadFamily] = React.useState('');
+  const [uploadStatus, setUploadStatus] = React.useState<string>('');
+  const [uploading, setUploading] = React.useState(false);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const FONT_MIME: Record<string, string> = {
+    ttf: 'font/ttf',
+    otf: 'font/otf',
+    woff: 'font/woff',
+    woff2: 'font/woff2',
+  };
+  const FORMAT_MAP: Record<string, 'truetype' | 'opentype' | 'woff' | 'woff2'> = {
+    ttf: 'truetype',
+    otf: 'opentype',
+    woff: 'woff',
+    woff2: 'woff2',
+  };
+
+  const handleUpload = () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file) { setUploadStatus('❌ Please choose a font file first.'); return; }
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
+      setUploadStatus('❌ Only TTF, OTF, WOFF, WOFF2 files are supported.');
+      return;
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      setUploadStatus('❌ Font file must be under 3 MB.');
+      return;
+    }
+    const family = uploadFamily.trim() || file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+    const label = uploadLabel.trim() || family;
+    if (!family) { setUploadStatus('❌ Please enter a font family name.'); return; }
+
+    setUploading(true);
+    setUploadStatus('⏳ Reading font file…');
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = (ev.target?.result as string);
+      // base64 is already a data URL: data:font/ttf;base64,...
+      // Inject @font-face immediately for admin preview
+      const styleId = `custom-font-${family.replace(/\s+/g, '-')}`;
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `@font-face { font-family: '${family}'; src: url('${base64}') format('${FORMAT_MAP[ext] || 'truetype'}'); font-display: swap; }`;
+        document.head.appendChild(style);
+      }
+      const newEntry: import('./types').FontInfo = {
+        family,
+        label,
+        src: base64,
+        format: FORMAT_MAP[ext] || 'truetype',
+      };
+      const updated = [...(settings.customFonts || []), newEntry];
+      await save({ customFonts: updated }, `Font "${label}" uploaded — live for all visitors!`);
+      setUploadStatus(`✅ "${label}" added! It will load for every visitor automatically.`);
+      setUploadLabel('');
+      setUploadFamily('');
+      if (fileRef.current) fileRef.current.value = '';
+      setUploading(false);
+    };
+    reader.onerror = () => {
+      setUploadStatus('❌ Failed to read font file. Please try again.');
+      setUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="border border-dashed border-violet-300 rounded-xl p-4 space-y-3 bg-violet-50/40">
+      <p className="text-sm font-bold text-violet-800">🖋️ Upload Custom Calligraphy Font</p>
+      <p className="text-xs text-violet-600">Supports TTF, OTF, WOFF, WOFF2 — stored in Supabase, loads for every visitor automatically.</p>
+
+      <div>
+        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font File</label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
+          onChange={e => {
+            const f = e.target.files?.[0];
+            if (f && !uploadFamily) {
+              setUploadFamily(f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
+              setUploadLabel(f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
+            }
+          }}
+          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
+        />
+        <p className="text-xs text-slate-400 mt-1">Max 3 MB. Larger fonts may slow page load.</p>
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font Family Name <span className="text-slate-400">(used internally)</span></label>
+        <input
+          value={uploadFamily}
+          onChange={e => setUploadFamily(e.target.value)}
+          placeholder="e.g. MyCalligraphy"
+          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Display Label <span className="text-slate-400">(shown in font picker)</span></label>
+        <input
+          value={uploadLabel}
+          onChange={e => setUploadLabel(e.target.value)}
+          placeholder="e.g. My Calligraphy"
+          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
+        />
+      </div>
+
+      <button
+        onClick={handleUpload}
+        disabled={uploading}
+        className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-xl px-4 py-2.5 text-sm transition-colors"
+      >
+        {uploading ? '⏳ Uploading…' : '📤 Upload Font → Live for Everyone'}
+      </button>
+
+      {uploadStatus && (
+        <p className={`text-xs rounded-xl p-3 ${uploadStatus.startsWith('✅') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⏳') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+          {uploadStatus}
+        </p>
+      )}
+
+      {/* Preview uploaded font */}
+      {uploadFamily && (
+        <div className="bg-white border border-violet-100 rounded-xl px-4 py-3">
+          <p className="text-xs text-slate-400 mb-1">Preview (after upload):</p>
+          <p style={{ fontFamily: `'${uploadFamily}', cursive` }} className="text-2xl text-slate-800">
+            Aa Bb Cc — {uploadLabel || uploadFamily}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Admin Page Component ───────────────────────────────────────────────────────
 type AdminTab = 'connection' | 'ads' | 'site' | 'fonts' | 'colors' | 'security';
 
@@ -2479,17 +2652,27 @@ function AdminPage() {
                   <div className="space-y-2">
                     {(settings.customFonts || []).map((f, i) => (
                       <div key={i} className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 rounded-xl border border-indigo-100">
-                        <span className="text-sm font-semibold">{f.label} <span className="text-xs text-slate-400">({f.family})</span></span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span style={{ fontFamily: `'${f.family}', cursive` }} className="text-lg text-slate-800 shrink-0">Aa</span>
+                          <div className="min-w-0">
+                            <span className="text-sm font-semibold">{f.label}</span>
+                            <span className="text-xs text-slate-400 ml-1">({f.family})</span>
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full font-semibold ${f.src ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {f.src ? `Uploaded · ${(f.format || 'ttf').toUpperCase()}` : 'Google Font'}
+                            </span>
+                          </div>
+                        </div>
                         <button onClick={async () => {
                           const updated = (settings.customFonts || []).filter((_, idx) => idx !== i);
                           await save({ customFonts: updated }, 'Font removed — live for all visitors!');
-                        }} className="text-red-400 hover:text-red-600 text-xs font-bold px-2 py-1 hover:bg-red-50 rounded-lg">Remove</button>
+                        }} className="text-red-400 hover:text-red-600 text-xs font-bold px-2 py-1 hover:bg-red-50 rounded-lg shrink-0 ml-2">Remove</button>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
+              {/* ── Add Google Font ── */}
               <div className="border border-dashed border-slate-300 rounded-xl p-4 space-y-3">
                 <p className="text-sm font-bold text-slate-700">+ Add Google Font</p>
                 <div>
@@ -2514,11 +2697,16 @@ function AdminPage() {
                   await save({ customFonts: updated }, `Font "${newFontLabel || newFontFamily}" added — live for all visitors!`);
                   setNewFontFamily(''); setNewFontLabel('');
                 }}>
-                  Add Font → Live for Everyone
+                  Add Google Font → Live for Everyone
                 </Btn>
               </div>
+
+              {/* ── Upload Custom Font File (TTF / OTF / WOFF / WOFF2) ── */}
+              <UploadFontSection settings={settings} save={save} />
+
               <p className="text-xs text-amber-600 bg-amber-50 rounded-xl p-3">
-                💡 After adding, also add the Google Fonts link to <code>index.html</code> so the font loads for all visitors without delay.
+                💡 <strong>Google Fonts:</strong> enter the exact family name from fonts.google.com. &nbsp;
+                <strong>Custom Fonts:</strong> upload a TTF/OTF/WOFF/WOFF2 file — it is stored in Supabase and loads for every visitor automatically.
               </p>
             </div>
           )}
