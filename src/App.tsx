@@ -798,13 +798,7 @@ Gravity of Sun keeps all planets in orbit.`;
               if (!document.getElementById(styleId)) {
                 const style = document.createElement('style');
                 style.id = styleId;
-                // Use stored format, but also provide a truetype fallback for Calligraphr
-                // fonts that were saved with format='opentype' despite being TTF internally.
-                const fmt = f.format || 'truetype';
-                const fallbackSrc = fmt === 'opentype'
-                  ? `url('${f.src}') format('opentype'), url('${f.src}') format('truetype')`
-                  : `url('${f.src}') format('${fmt}')`;
-                style.textContent = `@font-face { font-family: '${f.family}'; src: ${fallbackSrc}; font-display: swap; }`;
+                style.textContent = `@font-face { font-family: '${f.family}'; src: url('${f.src}') format('${f.format || 'truetype'}'); font-display: swap; }`;
                 document.head.appendChild(style);
               }
             } else {
@@ -2104,23 +2098,6 @@ function UploadFontSection({
     woff2: 'woff2',
   };
 
-  // Detect the true font format from the first 4 magic bytes of the file buffer.
-  // Calligraphr exports fonts with a .otf extension but TTF (TrueType) internals,
-  // so relying on the file extension alone produces a wrong format('opentype')
-  // declaration that browsers silently reject.
-  //   00 01 00 00  →  TrueType / TTF
-  //   4F 54 54 4F  →  OpenType CFF ("OTTO")
-  //   77 4F 46 46  →  WOFF
-  //   77 4F 46 32  →  WOFF2
-  const detectFontFormat = (buffer: ArrayBuffer): 'truetype' | 'opentype' | 'woff' | 'woff2' => {
-    const bytes = new Uint8Array(buffer, 0, 4);
-    const magic = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    if (magic === '774f4646') return 'woff';
-    if (magic === '774f4632') return 'woff2';
-    if (magic === '4f54544f') return 'opentype'; // "OTTO" = CFF OpenType
-    return 'truetype'; // 00010000 or any other = TrueType
-  };
-
   const handleUpload = () => {
     const file = fileRef.current?.files?.[0];
     if (!file) { setUploadStatus('❌ Please choose a font file first.'); return; }
@@ -2139,60 +2116,37 @@ function UploadFontSection({
 
     setUploading(true);
     setUploadStatus('⏳ Reading font file…');
-
-    // First read as ArrayBuffer to detect true format from magic bytes,
-    // then re-read as DataURL for storage.
-    const bufReader = new FileReader();
-    bufReader.onload = (bufEv) => {
-      const detectedFormat = detectFontFormat(bufEv.target?.result as ArrayBuffer);
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        // Replace the MIME type in the data URL to match the detected format
-        // so the @font-face src is always correct regardless of file extension.
-        const rawDataUrl = ev.target?.result as string;
-        const mimeForFormat: Record<string, string> = {
-          truetype: 'font/ttf',
-          opentype: 'font/otf',
-          woff: 'font/woff',
-          woff2: 'font/woff2',
-        };
-        const base64 = rawDataUrl.replace(
-          /^data:[^;]+;base64,/,
-          `data:${mimeForFormat[detectedFormat]};base64,`
-        );
-        // Inject @font-face immediately for admin preview
-        const styleId = `custom-font-${family.replace(/\s+/g, '-')}`;
-        const existingStyle = document.getElementById(styleId);
-        if (existingStyle) existingStyle.remove(); // remove stale preview style if re-uploading
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const base64 = (ev.target?.result as string);
+      // base64 is already a data URL: data:font/ttf;base64,...
+      // Inject @font-face immediately for admin preview
+      const styleId = `custom-font-${family.replace(/\s+/g, '-')}`;
+      if (!document.getElementById(styleId)) {
         const style = document.createElement('style');
         style.id = styleId;
-        style.textContent = `@font-face { font-family: '${family}'; src: url('${base64}') format('${detectedFormat}'); font-display: swap; }`;
+        style.textContent = `@font-face { font-family: '${family}'; src: url('${base64}') format('${FORMAT_MAP[ext] || 'truetype'}'); font-display: swap; }`;
         document.head.appendChild(style);
-        const newEntry: import('./types').FontInfo = {
-          family,
-          label,
-          src: base64,
-          format: detectedFormat,
-        };
-        const updated = [...(settings.customFonts || []), newEntry];
-        await save({ customFonts: updated }, `Font "${label}" uploaded — live for all visitors!`);
-        setUploadStatus(`✅ "${label}" added! It will load for every visitor automatically.`);
-        setUploadLabel('');
-        setUploadFamily('');
-        if (fileRef.current) fileRef.current.value = '';
-        setUploading(false);
+      }
+      const newEntry: import('./types').FontInfo = {
+        family,
+        label,
+        src: base64,
+        format: FORMAT_MAP[ext] || 'truetype',
       };
-      reader.onerror = () => {
-        setUploadStatus('❌ Failed to read font file. Please try again.');
-        setUploading(false);
-      };
-      reader.readAsDataURL(file);
+      const updated = [...(settings.customFonts || []), newEntry];
+      await save({ customFonts: updated }, `Font "${label}" uploaded — live for all visitors!`);
+      setUploadStatus(`✅ "${label}" added! It will load for every visitor automatically.`);
+      setUploadLabel('');
+      setUploadFamily('');
+      if (fileRef.current) fileRef.current.value = '';
+      setUploading(false);
     };
-    bufReader.onerror = () => {
+    reader.onerror = () => {
       setUploadStatus('❌ Failed to read font file. Please try again.');
       setUploading(false);
     };
-    bufReader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
   };
 
   return (
