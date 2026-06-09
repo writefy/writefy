@@ -1327,6 +1327,195 @@ function ConverterPage() {
               </div>
             ))}
           </div>
+{/* SEO Article */}
+<div className="mt-10 max-w-3xl mx-auto px-2">
+  <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-7 shadow-2xl text-white mb-6">
+    <h2 className="text-2xl font-black mb-3">Text to Handwriting Converter</h2>
+    <p className="text-slate-300 text-sm leading-relaxed">
+      Writeify is the world's only free tool that converts typed text into
+      beautiful multi-color handwriting — a feature no other tool offers.
+      Choose fonts, paper styles, ink colors per word, and download as PNG or PDF instantly.
+    </p>
+  </div>
+  <div className="space-y-6 text-slate-700">
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        🌈 Multi-Color Handwriting — Only on Writeify
+      </h3>
+      <p className="text-sm leading-relaxed mb-3">
+        No other handwriting tool in the world lets you assign different ink
+        colors to different words in the same page. Writeify's unique
+        color-span technology lets you highlight individual words or sentences
+        in any color — black, blue, red, green, purple and more — all on a
+        single page, exactly like a student who uses multiple pens.
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { icon: '🖊️', title: 'Per-Word Color', desc: 'Select any word and assign it a unique ink color' },
+          { icon: '📄', title: 'Single Page', desc: 'All colors appear together on one realistic page' },
+          { icon: '🎨', title: '8+ Colors', desc: 'Black, Blue, Red, Green, Purple, Orange, Pink, Brown' },
+          { icon: '💾', title: 'Export Ready', desc: 'Colors preserved in PNG and PDF export' },
+        ].map((f, i) => (
+          <div key={i} className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl">
+            <p className="text-xl mb-1">{f.icon}</p>
+            <p className="font-bold text-slate-800 text-sm">{f.title}</p>
+            <p className="text-slate-500 text-xs mt-0.5">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        📅 Page Number & Date Header
+      </h3>
+      <p className="text-sm leading-relaxed mb-3">
+        Writeify automatically adds a stylish Date and Page Number header
+        to every page — just like a real notebook. No other online
+        handwriting tool offers this. Enable it from the Page Header toggle,
+        enter your date once, and every page gets auto-numbered 1, 2, 3…
+        matching the length of your text. The header uses your selected
+        handwriting font and ink color for a completely authentic look.
+      </p>
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { icon: '📅', title: 'Custom Date', desc: 'Type any date — shown on all pages' },
+          { icon: '🔢', title: 'Auto Page No.', desc: 'Pages numbered automatically' },
+          { icon: '✍️', title: 'Handwriting Font', desc: 'Header uses selected font & color' },
+        ].map((f, i) => (
+          <div key={i} className="p-3 bg-pink-50 border border-pink-100 rounded-2xl text-center">
+            <p className="text-2xl mb-1">{f.icon}</p>
+            <p className="font-bold text-slate-800 text-xs">{f.title}</p>
+            <p className="text-slate-500 text-xs mt-0.5">{f.desc}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        What is a Text to Handwriting Converter?
+      </h3>
+      <p className="text-sm leading-relaxed">
+        A text to handwriting converter transforms your typed content into
+        handwritten-style output on realistic notebook paper. Instead of
+        writing pages by hand, simply type your content, choose a font,
+        paper style, and ink color — then download as PNG or PDF.
+        Writeify is the most advanced free handwriting converter available,
+        with features like multi-color ink, double-rule paper, and
+        automatic page numbering that no other tool provides.
+      </p>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        Why Students Love Writeify
+      </h3>
+      <ul className="space-y-2">
+        {[
+          '🌈 Multi-color handwriting on a single page — unique to Writeify',
+          '📅 Auto page numbers and date header on every page',
+          '✍️ 7 realistic handwriting fonts including Caveat, Kalam, Dancing Script',
+          '📓 5 paper types — Double Rule, Lined, Plain, Grid, Cream',
+          '📐 Adjustable font size, left margin, and word spacing',
+          '↔️ Text alignment — Left, Center, or Right',
+          '📥 Export as PNG image or multi-page PDF',
+          '📱 Works on mobile, tablet, and desktop',
+          '🔒 Text never leaves your device — 100% private',
+          '✅ Completely free — no signup required',
+        ].map((item, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm">
+            <span className="mt-0.5 flex-shrink-0">{item.split(' ')[0]}</span>
+            <span>{item.split(' ').slice(1).join(' ')}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        How to Use Writeify
+      </h3>
+      <div className="space-y-3">
+        {[
+          { n: '1', t: 'Type or Paste Your Text', d: 'Enter any text — essays, notes, assignments. Long text splits automatically across multiple pages.' },
+          { n: '2', t: 'Pick Colors Per Word', d: 'Select any word, tap a color button. That word gets its own ink color — unique to Writeify.' },
+          { n: '3', t: 'Set Page Header', d: 'Enable the Date & Page Number header. Type your date once — all pages get it automatically.' },
+          { n: '4', t: 'Choose Style', d: 'Select font, paper type, font size, margin, and word spacing to match your preference.' },
+          { n: '5', t: 'Download PNG or PDF', d: 'Export instantly. PNG for single image, PDF for multi-page document with all formatting.' },
+        ].map(s => (
+          <div key={s.n} className="flex gap-4 p-4 bg-indigo-50 rounded-2xl">
+            <div className="h-8 w-8 rounded-xl bg-indigo-600 text-white font-black flex items-center justify-center text-sm flex-shrink-0">{s.n}</div>
+            <div>
+              <p className="font-bold text-slate-800 text-sm">{s.t}</p>
+              <p className="text-slate-600 text-xs mt-0.5 leading-relaxed">{s.d}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        Paper Types Available
+      </h3>
+      <div className="space-y-2">
+        {[
+          { n: '📓 Double Rule', d: 'Classic Indian notebook with double margin lines and Date/Page header. Default paper on Writeify.' },
+          { n: '📄 Lined', d: 'Standard ruled paper with blue lines and red margin. Most common for essays and notes.' },
+          { n: '⬜ Plain', d: 'Clean white paper with no lines. Great for poems and creative writing.' },
+          { n: '⊞ Grid', d: 'Graph paper style. Perfect for maths, science, and technical content.' },
+          { n: '📜 Cream', d: 'Vintage warm-toned paper for an authentic, antique handwritten feel.' },
+        ].map(p => (
+          <div key={p.n} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex gap-3 items-start">
+            <span className="text-lg flex-shrink-0">{p.n.split(' ')[0]}</span>
+            <div>
+              <p className="font-bold text-slate-800 text-sm">{p.n.split(' ').slice(1).join(' ')}</p>
+              <p className="text-slate-500 text-xs mt-0.5">{p.d}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section>
+      <h3 className="text-lg font-black text-slate-900 mb-2">
+        Frequently Asked Questions
+      </h3>
+      <div className="space-y-3">
+        {[
+          { q: 'Is Writeify free?', a: '100% free. No signup, no hidden charges, no download limits ever.' },
+          { q: 'Can I use different colors for different words?', a: 'Yes — this is Writeify\'s unique feature. Select any word and assign it any ink color. Multiple colors appear on the same page.' },
+          { q: 'Does it add page numbers automatically?', a: 'Yes. Enable Page Header and Writeify auto-numbers every page (1, 2, 3…) based on your text length.' },
+          { q: 'Does it work on Android?', a: 'Yes. Writeify works perfectly on all Android browsers. No app download needed.' },
+          { q: 'How many pages can I export?', a: 'Unlimited. Long text splits automatically across as many pages as needed, all exported as one PDF.' },
+          { q: 'Is my text private?', a: 'Completely. All processing happens in your browser. Your text is never sent to any server.' },
+        ].map((f, i) => (
+          <div key={i} className="p-4 bg-white border border-slate-200 rounded-2xl">
+            <p className="font-bold text-slate-800 text-sm mb-1">Q: {f.q}</p>
+            <p className="text-slate-600 text-xs leading-relaxed">A: {f.a}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <section className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl p-6 text-white text-center">
+      <h3 className="text-lg font-black mb-2">
+        The Only Handwriting Tool with Multi-Color Support
+      </h3>
+      <p className="text-white/80 text-sm mb-4">
+        Free · Instant · No Signup · Works on Mobile
+      </p>
+      <button
+        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        className="bg-white text-indigo-600 font-black px-6 py-2.5 rounded-xl text-sm hover:bg-indigo-50 transition-all">
+        Try Writeify Now ↑
+      </button>
+    </section>
+
+  </div>
+</div>
 
           {/* Bottom Ad */}
           <div className="mt-5">
