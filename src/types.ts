@@ -5,7 +5,14 @@ export type PaperType = 'double' | 'lined' | 'plain' | 'grid' | 'cream';
 export interface ColourSpan { start: number; end: number; color: LineColor; }
 export interface Chunk { text: string; color: LineColor; }
 export interface ColorInfo { hex: LineColor; label: string; }
-export interface FontInfo { family: FontFamily; label: string; }
+export interface FontInfo {
+  family: FontFamily;
+  label: string;
+  /** For uploaded custom fonts: base64 data URL (data:font/ttf;base64,...) or a public URL */
+  src?: string;
+  /** Font format for @font-face: 'truetype' | 'opentype' | 'woff' | 'woff2' */
+  format?: 'truetype' | 'opentype' | 'woff' | 'woff2';
+}
 
 export interface AdminSettings {
   password: string;
