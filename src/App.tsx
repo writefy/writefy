@@ -821,67 +821,10 @@ Gravity of Sun keeps all planets in orbit.`;
     ...COLORS,
     ...(adminSettings.customColors || []),
   ], [adminSettings]);
-  // ── User custom fonts (stored in localStorage, browser-only) ─────────────
-  const USER_FONTS_KEY = 'writeify_user_fonts';
-  const loadUserFonts = (): FontInfo[] => {
-    try {
-      const raw = localStorage.getItem(USER_FONTS_KEY);
-      return raw ? JSON.parse(raw) : [];
-    } catch { return []; }
-  };
-  const [userFonts, setUserFonts] = useState<FontInfo[]>(loadUserFonts);
-
-  // Inject user font face styles on mount and when userFonts changes
-  useEffect(() => {
-    userFonts.forEach(f => {
-      if ((f as any).dataUrl) {
-        const styleId = `user-font-${f.family.replace(/\s+/g, '-')}`;
-        if (!document.getElementById(styleId)) {
-          const style = document.createElement('style');
-          style.id = styleId;
-          style.textContent = `@font-face { font-family: '${f.family}'; src: url('${(f as any).dataUrl}'); }`;
-          document.head.appendChild(style);
-        }
-      }
-    });
-  }, [userFonts]);
-
-  const addUserFont = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
-      const familyName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
-      const newFont: FontInfo & { dataUrl: string } = { family: familyName, label: `${familyName} (My Font)`, dataUrl };
-      const updated = [...userFonts.filter(f => f.family !== familyName), newFont];
-      setUserFonts(updated);
-      localStorage.setItem(USER_FONTS_KEY, JSON.stringify(updated));
-      // Inject font face immediately
-      const styleId = `user-font-${familyName.replace(/\s+/g, '-')}`;
-      const existing = document.getElementById(styleId);
-      if (existing) existing.remove();
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.textContent = `@font-face { font-family: '${familyName}'; src: url('${dataUrl}'); }`;
-      document.head.appendChild(style);
-      setFont(familyName as FontFamily);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeUserFont = (family: string) => {
-    const updated = userFonts.filter(f => f.family !== family);
-    setUserFonts(updated);
-    localStorage.setItem(USER_FONTS_KEY, JSON.stringify(updated));
-    const styleEl = document.getElementById(`user-font-${family.replace(/\s+/g, '-')}`);
-    if (styleEl) styleEl.remove();
-    if (font === family) setFont('Caveat');
-  };
-
   const allFonts = useMemo(() => [
     ...FONTS,
     ...(adminSettings.customFonts || []),
-    ...userFonts,
-  ], [adminSettings, userFonts]);
+  ], [adminSettings]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -1191,54 +1134,6 @@ Gravity of Sun keeps all planets in orbit.`;
                 </div>
               </div>
 
-              {/* ── My Fonts (user upload) ── */}
-              <div className="border border-dashed border-indigo-200 rounded-2xl p-3 bg-indigo-50/40 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">My Fonts</span>
-                  <span className="text-[10px] text-slate-400">Saved in your browser only</span>
-                </div>
-                {userFonts.length > 0 && (
-                  <div className="space-y-1">
-                    {userFonts.map(f => (
-                      <div key={f.family} className="flex items-center justify-between bg-white rounded-xl px-3 py-1.5 shadow-sm">
-                        <span
-                          style={{ fontFamily: `'${f.family}', cursive`, fontSize: 15 }}
-                          className="text-slate-700 truncate max-w-[140px]"
-                        >
-                          {f.label}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setFont(f.family as FontFamily)}
-                            className={`text-[10px] px-2 py-0.5 rounded-lg font-bold transition-colors ${font === f.family ? 'bg-indigo-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-indigo-100'}`}
-                          >
-                            {font === f.family ? 'Active' : 'Use'}
-                          </button>
-                          <button
-                            onClick={() => removeUserFont(f.family)}
-                            className="text-[10px] px-2 py-0.5 rounded-lg bg-red-50 text-red-400 hover:bg-red-100 font-bold"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <label className="flex items-center justify-center gap-2 w-full cursor-pointer bg-white border border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors rounded-xl py-2 text-xs font-semibold text-indigo-600">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                  Upload Font (.ttf / .otf)
-                  <input
-                    type="file"
-                    accept=".ttf,.otf,.woff,.woff2"
-                    className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) addUserFont(f); e.target.value = ''; }}
-                  />
-                </label>
-                <p className="text-[10px] text-slate-400 text-center leading-tight">
-                  Upload your handwriting as a .ttf font.<br/>Try <a href="https://www.calligraphr.com" target="_blank" rel="noopener noreferrer" className="text-indigo-500 underline">calligraphr.com</a> to create one free!
-                </p>
-              </div>
 
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
