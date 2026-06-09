@@ -746,9 +746,7 @@ const A4Page: React.FC<PageProps> = ({
 // ─── CONVERTER PAGE ───────────────────────────────────────────────────────────
 function ConverterPage() {
   const DEMO_TEXT = `What is the Solar System and how does it work?
-
 The Solar System is a vast collection of celestial bodies bound together by the gravitational pull of the Sun. It consists of the Sun at the center, eight planets, dozens of moons, millions of asteroids, comets, and other space objects. The Sun contains about 99.8 percent of all the mass in the Solar System and its gravity keeps everything in orbit. The Solar System formed approximately 4.6 billion years ago from a giant cloud of gas and dust called a solar nebula. As the cloud collapsed under gravity, the Sun formed at the center while the remaining material clumped together to form the planets. The eight planets are divided into two groups. The inner rocky planets are Mercury, Venus, Earth and Mars. The outer gas giants are Jupiter, Saturn, Uranus and Neptune. Earth is the only planet known to support life due to its perfect distance from the Sun, liquid water, and protective atmosphere. The planets travel in elliptical orbits around the Sun and each planet takes a different amount of time to complete one orbit. Mercury takes only 88 days while Neptune takes 165 Earth years.
-
 Key Points:
 Solar System formed 4.6 billion years ago.
 Sun holds 99.8 percent of total mass.
@@ -760,7 +758,7 @@ Mercury takes 88 days to orbit the Sun.
 Neptune takes 165 years to orbit the Sun.
 Saturn has rings made of ice and rock.
 Gravity of Sun keeps all planets in orbit.`;
-  const DEMO_SPANS: ColourSpan[] = [{ start: 0, end: 46, color: '#ef4444' }, { start: 48, end: 1141, color: '#2563eb' }, { start: 1143, end: 1154, color: '#16a34a' }, { start: 1155, end: 1197, color: '#16a34a' }, { start: 1198, end: 1235, color: '#16a34a' }, { start: 1236, end: 1260, color: '#16a34a' }, { start: 1261, end: 1304, color: '#16a34a' }, { start: 1305, end: 1353, color: '#16a34a' }, { start: 1354, end: 1395, color: '#16a34a' }, { start: 1396, end: 1435, color: '#16a34a' }, { start: 1436, end: 1477, color: '#16a34a' }, { start: 1478, end: 1516, color: '#16a34a' }, { start: 1517, end: 1559, color: '#16a34a' }];
+  const DEMO_SPANS: ColourSpan[] = [{ start: 0, end: 46, color: '#ef4444' }, { start: 47, end: 1140, color: '#2563eb' }, { start: 1141, end: 1152, color: '#000000' }, { start: 1153, end: 1195, color: '#16a34a' }, { start: 1196, end: 1233, color: '#16a34a' }, { start: 1234, end: 1258, color: '#16a34a' }, { start: 1259, end: 1302, color: '#16a34a' }, { start: 1303, end: 1351, color: '#16a34a' }, { start: 1352, end: 1393, color: '#16a34a' }, { start: 1394, end: 1433, color: '#16a34a' }, { start: 1434, end: 1475, color: '#16a34a' }, { start: 1476, end: 1514, color: '#16a34a' }, { start: 1515, end: 1557, color: '#16a34a' }];
   const [rawText, setRawText] = useState(DEMO_TEXT);
   const [spans, setSpans] = useState<ColourSpan[]>(DEMO_SPANS);
   const [defaultColor, setDefaultColor] = useState<LineColor>('#1e40af');
