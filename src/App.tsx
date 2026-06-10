@@ -2889,7 +2889,6 @@ interface InvoiceItem {
   qty: number | '';
   rate: number | '';
   tax: number | '';
-  unit: string;
 }
 
 function generateId() {
@@ -2910,10 +2909,10 @@ function InvoiceMakerPage() {
   const [couponCode, setCouponCode] = useState('');
   const [couponAmount, setCouponAmount] = useState<number | ''>('');
   const [items, setItems] = useState<InvoiceItem[]>([
-    { id: generateId(), description: '', qty: '', rate: '', tax: '', unit: 'unit' },
+    { id: generateId(), description: '', qty: '', rate: '', tax: '' },
   ]);
 
-  const addItem = () => setItems(prev => [...prev, { id: generateId(), description: '', qty: '', rate: '', tax: '', unit: 'unit' }]);
+  const addItem = () => setItems(prev => [...prev, { id: generateId(), description: '', qty: '', rate: '', tax: '' }]);
   const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id));
   const updateItem = (id: string, field: keyof InvoiceItem, value: string | number) =>
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
@@ -2921,7 +2920,7 @@ function InvoiceMakerPage() {
   const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
   const totalTax = items.reduce((s, i) => s + ((Number(i.qty) || 0) * (Number(i.rate) || 0) * (Number(i.tax) || 0)) / 100, 0);
   const discount = couponAmount !== '' && couponAmount > 0 ? couponAmount : 0;
-  const grandTotal = subtotal + totalTax - discount;
+  const grandTotal = Math.max(0, subtotal + totalTax - discount);
 
   function toWords(n: number) {
     const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
@@ -2941,103 +2940,220 @@ function InvoiceMakerPage() {
     return fn(int).trim() + ' Rupees Only';
   }
 
-  const [invoiceDownloading, setInvoiceDownloading] = useState<false | 'pdf'>(false);
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
 
   const exportInvoicePDF = async () => {
-    setInvoiceDownloading('pdf');
-    await new Promise(r => setTimeout(r, 100)); // flush render so animation shows
-    const startTime = Date.now();
+    setInvoiceDownloading(true);
+    await new Promise(r => setTimeout(r, 100));
     try {
-      await waitForFonts();
-      const previewEl = document.getElementById('invoice-preview');
-      if (!previewEl) throw new Error('Preview element not found');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pw = 210;
+      const margin = 14;
+      const contentW = pw - margin * 2;
+      let y = 0;
 
-      // html2canvas 1.x crashes on oklch() colors (used by Tailwind v4).
-      // Modern Chrome/Firefox also return oklch strings from getComputedStyle,
-      // so we cannot rely on the browser to convert them for us.
-      // Solution: parse and convert oklch() → rgb() manually via color math.
+      // Red top bar
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(0, 0, pw, 4, 'F');
+      y = 10;
 
-      function oklchToRgb(val: string): string {
-        const m = val.match(/oklch\(\s*([\d.%]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)/i);
-        if (!m) return val;
-        const L = parseFloat(m[1]) / (m[1].includes('%') ? 100 : 1);
-        const C = parseFloat(m[2]);
-        const H = parseFloat(m[3]) * (Math.PI / 180);
-        const alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
-        // OKLCh → OKLab
-        const a = C * Math.cos(H);
-        const b = C * Math.sin(H);
-        // OKLab → linear sRGB
-        const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-        const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-        const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
-        const ll = l_ * l_ * l_;
-        const mm = m_ * m_ * m_;
-        const ss = s_ * s_ * s_;
-        const r =  4.0767416621 * ll - 3.3077115913 * mm + 0.2309699292 * ss;
-        const g = -1.2684380046 * ll + 2.6097574011 * mm - 0.3413193965 * ss;
-        const bv = -0.0041960863 * ll - 0.7034186147 * mm + 1.7076147010 * ss;
-        const toSrgb = (x: number) => {
-          const c = Math.max(0, Math.min(1, x));
-          return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-        };
-        const ri = Math.round(toSrgb(r) * 255);
-        const gi = Math.round(toSrgb(g) * 255);
-        const bi = Math.round(toSrgb(bv) * 255);
-        return alpha < 1 ? `rgba(${ri},${gi},${bi},${alpha})` : `rgb(${ri},${gi},${bi})`;
+      // Seller logo circle
+      pdf.setFillColor(239, 68, 68);
+      pdf.circle(margin + 4, y + 2, 4, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text((sellerName || 'B')[0].toUpperCase(), margin + 4, y + 3.5, { align: 'center' });
+
+      // Seller name
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(sellerName || 'Your Business', margin + 10, y + 3);
+      y += 8;
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 116, 139);
+      if (sellerAddress) { pdf.text(sellerAddress, margin, y); y += 5; }
+      if (sellerPhone) { pdf.text('Phone: ' + sellerPhone, margin, y); y += 5; }
+      if (sellerGST) { pdf.text('GSTIN: ' + sellerGST, margin, y); y += 5; }
+
+      // Invoice No + Date (top right)
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Invoice No. ' + (invoiceNo || '—'), pw - margin, 14, { align: 'right' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text('Invoice Date: ' + (invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'), pw - margin, 20, { align: 'right' });
+
+      // PAID stamp
+      if (isPaid) {
+        pdf.setDrawColor(22, 163, 74);
+        pdf.setLineWidth(0.6);
+        pdf.circle(pw - margin - 10, 16, 10);
+        pdf.circle(pw - margin - 10, 16, 8.5);
+        pdf.setTextColor(22, 163, 74);
+        pdf.setFontSize(5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('THANK YOU', pw - margin - 10, 13.5, { align: 'center' });
+        pdf.setFontSize(9);
+        pdf.text('PAID', pw - margin - 10, 18, { align: 'center' });
       }
 
-      function resolveColor(val: string): string {
-        if (!val || !val.includes('oklch')) return val;
-        return val.replace(/oklch\([^)]+\)/gi, match => oklchToRgb(match));
-      }
+      y = Math.max(y, 28) + 4;
 
-      const colorProps = [
-        'color', 'background-color',
-        'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
-        'outline-color', 'text-decoration-color',
-      ];
+      // Bill to box
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.3);
+      pdf.roundedRect(margin, y, contentW, 22, 2, 2, 'FD');
+      pdf.setTextColor(148, 163, 184);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Bill and Ship To', margin + 3, y + 5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(buyerName || 'Customer Name', margin + 3, y + 11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      if (buyerPhone) pdf.text('Phone: ' + buyerPhone, margin + 3, y + 16);
+      if (buyerGST) pdf.text('GSTIN: ' + buyerGST, margin + 3, y + 20);
 
-      const canvas = await html2canvas(previewEl, {
-        scale: 3,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        onclone: (_clonedDoc, el) => {
-          const liveNodes = Array.from(previewEl.querySelectorAll<HTMLElement>('*'));
-          const cloneNodes = Array.from(el.querySelectorAll<HTMLElement>('*'));
-          liveNodes.forEach((liveNode, i) => {
-            const cloneNode = cloneNodes[i];
-            if (!cloneNode) return;
-            const cs = window.getComputedStyle(liveNode);
-            colorProps.forEach(prop => {
-              const val = cs.getPropertyValue(prop);
-              if (!val || val === '') return;
-              cloneNode.style.setProperty(prop, resolveColor(val), 'important');
-            });
-          });
-        },
+      // Total amount right side of bill box
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(7);
+      pdf.text('Total amount', pw - margin - 3, y + 7, { align: 'right' });
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }), pw - margin - 3, y + 15, { align: 'right' });
+      pdf.setFontSize(6);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(toWords(grandTotal), pw - margin - 3, y + 20, { align: 'right' });
+
+      y += 28;
+
+      // Table header
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(margin, y, contentW, 7, 'F');
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      const cols = [margin + 2, margin + 8, margin + 90, margin + 115, margin + 133, margin + 155, margin + 178];
+      ['#', 'ITEM DETAILS', 'PRICE/UNIT', 'QTY', 'RATE', 'TOTAL TAX', 'TOTAL'].forEach((h, i) => {
+        pdf.text(h, cols[i], y + 4.5, { align: i >= 2 ? 'right' : 'left' });
+      });
+      y += 7;
+
+      // Table rows
+      pdf.setFont('helvetica', 'normal');
+      items.forEach((item, idx) => {
+        const qty = Number(item.qty) || 0;
+        const rate = Number(item.rate) || 0;
+        const tax = Number(item.tax) || 0;
+        const lineTotal = qty * rate;
+        const lineTax = (lineTotal * tax) / 100;
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.2);
+        pdf.line(margin, y, margin + contentW, y);
+        pdf.setTextColor(71, 85, 105);
+        pdf.setFontSize(8);
+        pdf.text(String(idx + 1).padStart(2, '0'), cols[0], y + 5);
+        pdf.setTextColor(15, 23, 42);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(item.description || '—', cols[1], y + 5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(rate.toLocaleString('en-IN') + '/unit', cols[2], y + 5, { align: 'right' });
+        pdf.text(String(qty), cols[3], y + 5, { align: 'right' });
+        pdf.text(lineTotal.toLocaleString('en-IN'), cols[4], y + 5, { align: 'right' });
+        pdf.text(tax > 0 ? lineTax.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '–', cols[5], y + 5, { align: 'right' });
+        pdf.setTextColor(15, 23, 42);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text((lineTotal + lineTax).toLocaleString('en-IN', { maximumFractionDigits: 2 }), cols[6], y + 5, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+        y += 8;
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pw = pdf.internal.pageSize.getWidth();
-      const ph = pdf.internal.pageSize.getHeight();
+      // Sub-total row
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(margin, y, contentW, 7, 'F');
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SUB-TOTAL AMOUNT', cols[1], y + 4.5);
+      pdf.text(subtotal.toLocaleString('en-IN'), cols[4], y + 4.5, { align: 'right' });
+      pdf.text(totalTax > 0 ? totalTax.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '–', cols[5], y + 4.5, { align: 'right' });
+      pdf.text((subtotal + totalTax).toLocaleString('en-IN', { maximumFractionDigits: 2 }), cols[6], y + 4.5, { align: 'right' });
+      y += 10;
 
-      const imgW = pw;
-      const imgH = (canvas.height / canvas.width) * pw;
-      const yOffset = imgH < ph ? (ph - imgH) / 2 : 0;
+      // Discount row
+      if (discount > 0) {
+        pdf.setDrawColor(187, 247, 208);
+        pdf.setFillColor(240, 253, 244);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(pw - margin - 70, y, 70, 8, 2, 2, 'FD');
+        pdf.setTextColor(21, 128, 61);
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Coupon' + (couponCode ? ` "${couponCode}"` : '') + ' Discount  -Rs.' + discount.toLocaleString('en-IN'), pw - margin - 2, y + 5.5, { align: 'right' });
+        y += 12;
+      }
 
-      pdf.addImage(imgData, 'PNG', 0, imgH < ph ? yOffset : 0, imgW, Math.min(imgH, ph));
+      // Grand total
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Total amount', pw - margin, y, { align: 'right' });
+      y += 6;
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }), pw - margin, y, { align: 'right' });
+      y += 6;
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(toWords(grandTotal), pw - margin, y, { align: 'right' });
+      pdf.text('Is reverse charge applicable? No', pw - margin, y + 5, { align: 'right' });
+      y += 14;
+
+      // Divider
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, y, margin + contentW, y);
+      y += 6;
+
+      // Footer
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('~ THIS IS A DIGITALLY CREATED INVOICE ~', pw / 2, y, { align: 'center' });
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('Thank you for the business.', margin, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('AUTHORISED SIGNATURE', pw - margin, y, { align: 'right' });
+      y += 8;
+
+      // Red bottom bar
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(0, y, pw, 4, 'F');
 
       pdf.save(`invoice-${invoiceNo || 'writeify'}.pdf`);
     } catch (err) {
       console.error('Invoice PDF error:', err);
       alert('PDF generation failed: ' + String(err));
     } finally {
-      // Guarantee animation is visible for at least 3 seconds
-      const elapsed = Date.now() - startTime;
-      if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
+      await new Promise(r => setTimeout(r, 800));
       setInvoiceDownloading(false);
     }
   };
@@ -3106,7 +3222,6 @@ function InvoiceMakerPage() {
                   <th className="pb-2 font-semibold pr-2">Description</th>
                   <th className="pb-2 font-semibold pr-2 w-16">Qty</th>
                   <th className="pb-2 font-semibold pr-2 w-24">Rate (₹)</th>
-                  <th className="pb-2 font-semibold pr-2 w-20">Unit</th>
                   <th className="pb-2 font-semibold pr-2 w-20">Tax %</th>
                   <th className="pb-2 font-semibold w-10"></th>
                 </tr>
@@ -3122,29 +3237,6 @@ function InvoiceMakerPage() {
                     </td>
                     <td className="py-1 pr-2">
                       <input type="number" min={0} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="0" value={item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value === '' ? '' : Number(e.target.value))} />
-                    </td>
-                    <td className="py-1 pr-2">
-                      <select className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white" value={item.unit} onChange={e => updateItem(item.id, 'unit', e.target.value)}>
-                        <option value="unit">unit</option>
-                        <option value="pc">pc</option>
-                        <option value="box">box</option>
-                        <option value="kg">kg</option>
-                        <option value="g">g</option>
-                        <option value="l">l</option>
-                        <option value="ml">ml</option>
-                        <option value="m">m</option>
-                        <option value="ft">ft</option>
-                        <option value="pair">pair</option>
-                        <option value="set">set</option>
-                        <option value="dozen">dozen</option>
-                        <option value="bag">bag</option>
-                        <option value="bottle">bottle</option>
-                        <option value="pack">pack</option>
-                        <option value="roll">roll</option>
-                        <option value="sheet">sheet</option>
-                        <option value="hr">hr</option>
-                        <option value="day">day</option>
-                      </select>
                     </td>
                     <td className="py-1 pr-2">
                       <input type="number" min={0} max={100} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="0" value={item.tax} onChange={e => updateItem(item.id, 'tax', e.target.value === '' ? '' : Number(e.target.value))} />
@@ -3179,12 +3271,29 @@ function InvoiceMakerPage() {
           </div>
         </div>
 
-        {/* Export animation — same component as handwriting export */}
-        <ExportAnimation type={invoiceDownloading} pageCount={1} />
+        {/* Download animation overlay */}
+        {invoiceDownloading && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+            <div className="bg-white rounded-[2rem] shadow-2xl p-8 flex flex-col items-center gap-5 w-full max-w-sm">
+              <div className="h-20 w-20 rounded-[1.4rem] bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-xl">
+                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 text-white" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v13m0 0l-4-4m4 4l4-4" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="font-black text-slate-900 text-lg">Generating PDF…</p>
+                <p className="text-slate-500 text-sm mt-1">Rendering invoice, please wait</p>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                <div className="h-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 animate-pulse" style={{ width: '75%', transition: 'width 0.6s ease' }} />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Download button */}
         <div className="flex gap-3 mb-8 print:hidden">
-          <button onClick={exportInvoicePDF} disabled={!!invoiceDownloading} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity disabled:opacity-60">
+          <button onClick={exportInvoicePDF} disabled={invoiceDownloading} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity disabled:opacity-60">
             {invoiceDownloading ? '⏳ Generating…' : '⬇️ Download PDF'}
           </button>
         </div>
@@ -3267,7 +3376,7 @@ function InvoiceMakerPage() {
                     <tr key={item.id} className="border-b border-slate-100">
                       <td className="py-2 text-slate-400 pr-2">{String(idx + 1).padStart(2,'0')}</td>
                       <td className="py-2 font-medium text-slate-800 pr-2">{item.description || '—'}</td>
-                      <td className="py-2 text-right text-slate-600 pr-4">{(Number(item.rate) || 0).toLocaleString('en-IN')}/{item.unit || 'unit'}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{(Number(item.rate) || 0).toLocaleString('en-IN')}/unit</td>
                       <td className="py-2 text-right text-slate-600 pr-4">{item.qty || 0}</td>
                       <td className="py-2 text-right text-slate-600 pr-4">{lineTotal.toLocaleString('en-IN')}</td>
                       <td className="py-2 text-right text-slate-600 pr-4">{(Number(item.tax) || 0) > 0 ? lineTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
@@ -3316,10 +3425,6 @@ function InvoiceMakerPage() {
             <div className="flex justify-between items-end text-xs text-slate-500">
               <span>Thank you for the business.</span>
               <span className="font-semibold uppercase tracking-wider text-slate-600">Authorised Signature</span>
-            </div>
-            {/* Copyright */}
-            <div className="mt-3 text-center text-[10px] text-slate-400">
-              Generated by <a href="https://writeify.online" target="_blank" rel="noopener noreferrer" className="text-indigo-400 font-semibold hover:underline">writeify.online</a> — Free Invoice Maker
             </div>
           </div>
 
