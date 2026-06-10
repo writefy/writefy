@@ -348,8 +348,13 @@ function wrapChunksToPageLines(
   font: FontFamily,
   fontSize: number,
   maxWidth: number,
-  defaultColor: LineColor
+  defaultColor: LineColor,
+  wordSpacing = 0
 ) {
+  // When wordSpacing > 0 each chunk is rendered wider, so shrink the wrapping budget
+  // by a conservative per-word penalty (avg ~5 spaces per line at spacing px each).
+  const effectiveMax = wordSpacing > 0 ? maxWidth - wordSpacing * 5 : maxWidth;
+
   // Preserve ALL lines including blank ones — empty lines = empty ruled lines in preview/export
   const explicitLines = chunksToLines(chunks);
 
@@ -378,11 +383,11 @@ function wrapChunksToPageLines(
         if (!cleanToken) return;
 
         const tokenWidth = measureTextWidth(cleanToken, font, fontSize);
-        if (width > 0 && width + tokenWidth > maxWidth) {
+        if (width > 0 && width + tokenWidth > effectiveMax) {
           flush();
         }
 
-        if (tokenWidth <= maxWidth) {
+        if (tokenWidth <= effectiveMax) {
           pushChunk(line, cleanToken, chunk.color);
           width += tokenWidth;
           return;
@@ -391,7 +396,7 @@ function wrapChunksToPageLines(
         // Break very long words/URLs character-by-character so no text is clipped.
         for (const char of cleanToken) {
           const charWidth = measureTextWidth(char, font, fontSize);
-          if (width > 0 && width + charWidth > maxWidth) flush();
+          if (width > 0 && width + charWidth > effectiveMax) flush();
           pushChunk(line, char, chunk.color);
           width += charWidth;
         }
@@ -868,8 +873,8 @@ Gravity of Sun keeps all planets in orbit.`;
   ) + 1, [effectiveFirstBaseline, lineHeight]);
   const maxTextWidth = A4_WIDTH_PX - PAPER_PAD_LEFT - PAPER_PAD_RIGHT - marginLeft;
   const allLines = useMemo(
-    () => wrapChunksToPageLines(allChunks, font, fontSize, maxTextWidth, defaultColor),
-    [allChunks, defaultColor, font, fontReadyTick, fontSize, maxTextWidth]
+    () => wrapChunksToPageLines(allChunks, font, fontSize, maxTextWidth, defaultColor, wordSpacing),
+    [allChunks, defaultColor, font, fontReadyTick, fontSize, maxTextWidth, wordSpacing]
   );
 
   useEffect(() => {
@@ -1038,6 +1043,7 @@ Gravity of Sun keeps all planets in orbit.`;
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-xs sm:text-sm text-slate-600 shadow-sm flex-shrink-0">
             <Link to="/" className="rounded-full px-3 py-1.5 font-semibold text-slate-950 hover:bg-slate-100">Home</Link>
+            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Tools</Link>
             <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">FAQ</Link>
             <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Privacy</Link>
             <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Terms</Link>
@@ -1614,6 +1620,7 @@ function PageLayout({ children }: { children: React.ReactNode }) {
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm text-slate-600 shadow-sm">
             <Link to="/" className="rounded-full px-3 py-1.5 font-semibold hover:bg-slate-100 hover:text-slate-950">Home</Link>
+            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Tools</Link>
             <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">FAQ</Link>
             <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Privacy</Link>
             <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Terms</Link>
@@ -2823,6 +2830,385 @@ function AdminPage() {
 }
 
 
+// ─── TOOLS HUB PAGE ──────────────────────────────────────────────────────────
+const toolsList = [
+  {
+    slug: 'invoice-maker',
+    label: 'Invoice Maker',
+    icon: '🧾',
+    desc: 'Create professional GST invoices with coupon/discount support, PAID stamp, and instant print/download.',
+    badge: 'New',
+  },
+];
+
+function ToolsHubPage() {
+  return (
+    <PageLayout>
+      <div className="mb-8">
+        <span className="inline-block bg-indigo-100 text-indigo-700 text-xs font-bold px-3 py-1 rounded-full mb-3 uppercase tracking-widest">Student Tools</span>
+        <h1 className="text-3xl sm:text-4xl font-black text-slate-900 mb-2 tracking-tight">More Tools</h1>
+        <p className="text-slate-500 text-base max-w-xl">A growing suite of free tools for students, freelancers &amp; small businesses. No login needed, all tools run in your browser.</p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {toolsList.map(tool => (
+          <Link
+            key={tool.slug}
+            to={`/tools/${tool.slug}`}
+            className="group flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm hover:shadow-lg hover:border-indigo-300 transition-all duration-200"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-3xl">{tool.icon}</span>
+              {tool.badge && (
+                <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">{tool.badge}</span>
+              )}
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 group-hover:text-indigo-700 transition-colors">{tool.label}</h2>
+              <p className="text-slate-500 text-sm mt-0.5 leading-relaxed">{tool.desc}</p>
+            </div>
+            <span className="mt-auto text-xs font-semibold text-indigo-600 group-hover:underline">Open tool →</span>
+          </Link>
+        ))}
+        {/* Placeholder for future tools */}
+        <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 p-6 opacity-60">
+          <span className="text-3xl">🔧</span>
+          <div>
+            <h2 className="text-lg font-bold text-slate-400">More coming soon…</h2>
+            <p className="text-slate-400 text-sm mt-0.5">Unit Converter, GPA Calculator, Citation Generator &amp; more.</p>
+          </div>
+        </div>
+      </div>
+    </PageLayout>
+  );
+}
+
+// ─── INVOICE MAKER PAGE ───────────────────────────────────────────────────────
+interface InvoiceItem {
+  id: string;
+  description: string;
+  qty: number;
+  rate: number;
+  tax: number;
+}
+
+function generateId() {
+  return Math.random().toString(36).slice(2, 8);
+}
+
+function InvoiceMakerPage() {
+  const [sellerName, setSellerName] = useState('');
+  const [sellerAddress, setSellerAddress] = useState('');
+  const [sellerPhone, setSellerPhone] = useState('');
+  const [sellerGST, setSellerGST] = useState('');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerPhone, setBuyerPhone] = useState('');
+  const [buyerGST, setBuyerGST] = useState('');
+  const [invoiceNo, setInvoiceNo] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isPaid, setIsPaid] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponAmount, setCouponAmount] = useState(0);
+  const [items, setItems] = useState<InvoiceItem[]>([
+    { id: generateId(), description: '', qty: 1, rate: 0, tax: 0 },
+  ]);
+
+  const addItem = () => setItems(prev => [...prev, { id: generateId(), description: '', qty: 1, rate: 0, tax: 0 }]);
+  const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id));
+  const updateItem = (id: string, field: keyof InvoiceItem, value: string | number) =>
+    setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
+
+  const subtotal = items.reduce((s, i) => s + i.qty * i.rate, 0);
+  const totalTax = items.reduce((s, i) => s + (i.qty * i.rate * i.tax) / 100, 0);
+  const discount = couponAmount > 0 ? couponAmount : 0;
+  const grandTotal = subtotal + totalTax - discount;
+
+  function toWords(n: number) {
+    const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
+      'Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+    const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+    if (n === 0) return 'Zero';
+    const int = Math.floor(n);
+    const fn = (num: number): string => {
+      if (num === 0) return '';
+      if (num < 20) return ones[num] + ' ';
+      if (num < 100) return tens[Math.floor(num/10)] + (num%10 ? ' ' + ones[num%10] : '') + ' ';
+      if (num < 1000) return ones[Math.floor(num/100)] + ' Hundred ' + fn(num%100);
+      if (num < 100000) return fn(Math.floor(num/1000)) + 'Thousand ' + fn(num%1000);
+      if (num < 10000000) return fn(Math.floor(num/100000)) + 'Lakh ' + fn(num%100000);
+      return fn(Math.floor(num/10000000)) + 'Crore ' + fn(num%10000000);
+    };
+    return fn(int).trim() + ' Rupees Only';
+  }
+
+  const handlePrint = () => window.print();
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.2),transparent_32rem),linear-gradient(135deg,#f8fafc_0%,#eef2ff_50%,#f8fafc_100%)]">
+      {/* Header */}
+      <header className="sticky top-0 z-50 border-b border-white/60 bg-white/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl print:hidden">
+        <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <Link to="/" className="flex items-center gap-2.5">
+            <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-700 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/25 ring-1 ring-white/60">
+              <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </div>
+            <span className="font-black tracking-tight text-slate-950 text-sm sm:text-base">Writeify</span>
+          </Link>
+          <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm text-slate-600 shadow-sm">
+            <Link to="/" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Home</Link>
+            <Link to="/tools" className="rounded-full px-3 py-1.5 font-semibold text-indigo-700 bg-indigo-50">Tools</Link>
+          </nav>
+        </div>
+      </header>
+
+      <div className="max-w-4xl mx-auto px-4 py-8 print:p-0 print:max-w-full">
+        {/* Page title */}
+        <div className="mb-6 print:hidden">
+          <Link to="/tools" className="text-sm text-indigo-600 hover:underline mb-2 inline-block">← Back to Tools</Link>
+          <h1 className="text-3xl font-black text-slate-900">Invoice Maker</h1>
+          <p className="text-slate-500 text-sm mt-1">Fill in the details below. The invoice preview updates in real-time. Use Print / Save as PDF to download.</p>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:hidden mb-8">
+          {/* Seller */}
+          <div className="bg-white/80 rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Seller / From</h2>
+            <div className="space-y-2">
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Business / Shop Name" value={sellerName} onChange={e => setSellerName(e.target.value)} />
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Address" value={sellerAddress} onChange={e => setSellerAddress(e.target.value)} />
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Phone" value={sellerPhone} onChange={e => setSellerPhone(e.target.value)} />
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="GSTIN (optional)" value={sellerGST} onChange={e => setSellerGST(e.target.value)} />
+            </div>
+          </div>
+          {/* Buyer + Invoice meta */}
+          <div className="bg-white/80 rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Bill To / Buyer</h2>
+            <div className="space-y-2">
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Customer / Shop Name" value={buyerName} onChange={e => setBuyerName(e.target.value)} />
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Phone" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} />
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="GSTIN (optional)" value={buyerGST} onChange={e => setBuyerGST(e.target.value)} />
+              <div className="flex gap-2">
+                <input className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="Invoice No." value={invoiceNo} onChange={e => setInvoiceNo(e.target.value)} />
+                <input type="date" className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Items table editor */}
+        <div className="bg-white/80 rounded-2xl border border-slate-200 p-5 shadow-sm mb-6 print:hidden">
+          <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Items</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-100">
+                  <th className="pb-2 font-semibold pr-2">Description</th>
+                  <th className="pb-2 font-semibold pr-2 w-16">Qty</th>
+                  <th className="pb-2 font-semibold pr-2 w-24">Rate (₹)</th>
+                  <th className="pb-2 font-semibold pr-2 w-20">Tax %</th>
+                  <th className="pb-2 font-semibold w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => (
+                  <tr key={item.id} className="border-b border-slate-50">
+                    <td className="py-1 pr-2">
+                      <input className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.description} onChange={e => updateItem(item.id, 'description', e.target.value)} placeholder="Item name / details" />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input type="number" min={1} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.qty} onChange={e => updateItem(item.id, 'qty', Number(e.target.value))} />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input type="number" min={0} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.rate} onChange={e => updateItem(item.id, 'rate', Number(e.target.value))} />
+                    </td>
+                    <td className="py-1 pr-2">
+                      <input type="number" min={0} max={100} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.tax} onChange={e => updateItem(item.id, 'tax', Number(e.target.value))} />
+                    </td>
+                    <td className="py-1 text-center">
+                      <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 font-bold text-lg leading-none">×</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button onClick={addItem} className="mt-3 text-sm text-indigo-600 font-semibold hover:underline">+ Add Item</button>
+        </div>
+
+        {/* Coupon & Options */}
+        <div className="bg-white/80 rounded-2xl border border-slate-200 p-5 shadow-sm mb-6 print:hidden">
+          <h2 className="font-bold text-slate-700 mb-3 text-sm uppercase tracking-wide">Discount / Coupon</h2>
+          <div className="flex flex-col sm:flex-row gap-3 items-end">
+            <div className="flex-1">
+              <label className="text-xs text-slate-500 mb-1 block">Coupon Code (optional label)</label>
+              <input className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="e.g. SAVE100" value={couponCode} onChange={e => setCouponCode(e.target.value)} />
+            </div>
+            <div className="w-40">
+              <label className="text-xs text-slate-500 mb-1 block">Discount Amount (₹)</label>
+              <input type="number" min={0} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" value={couponAmount} onChange={e => setCouponAmount(Number(e.target.value))} />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer pb-2">
+              <input type="checkbox" checked={isPaid} onChange={e => setIsPaid(e.target.checked)} className="w-4 h-4 accent-green-600" />
+              <span className="text-sm font-semibold text-green-700">Mark as PAID</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Print button */}
+        <div className="flex gap-3 mb-8 print:hidden">
+          <button onClick={handlePrint} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity">
+            🖨️ Print / Save PDF
+          </button>
+        </div>
+
+        {/* ─── INVOICE PREVIEW ─── */}
+        <div id="invoice-preview" className="bg-white rounded-2xl border border-red-200 shadow-xl overflow-hidden print:rounded-none print:shadow-none print:border-0">
+          {/* Red top bar */}
+          <div className="h-2 bg-red-500 print:block" />
+
+          <div className="p-6 sm:p-8">
+            {/* Header row */}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+              {/* Seller info */}
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="h-8 w-8 rounded bg-red-500 flex items-center justify-center text-white font-black text-sm">
+                    {sellerName ? sellerName[0].toUpperCase() : 'L'}
+                  </div>
+                  <span className="font-black text-slate-900 text-lg">{sellerName || 'Your Business Name'}</span>
+                </div>
+                <div className="text-slate-500 text-xs leading-relaxed">
+                  {sellerAddress && <div>{sellerAddress}</div>}
+                  {sellerPhone && <div>Phone: {sellerPhone}</div>}
+                  {sellerGST && <div>GSTIN: {sellerGST}</div>}
+                </div>
+              </div>
+              {/* Invoice meta + PAID stamp */}
+              <div className="text-right relative">
+                <div className="font-bold text-slate-700 text-sm">Invoice No. {invoiceNo || '—'}</div>
+                <div className="text-slate-500 text-xs">Invoice Date: {invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric'}) : '—'}</div>
+                {isPaid && (
+                  <div className="absolute -top-2 right-0 flex items-center justify-center">
+                    <div className="relative w-20 h-20">
+                      <svg viewBox="0 0 80 80" className="w-20 h-20 opacity-85">
+                        <circle cx="40" cy="40" r="34" fill="none" stroke="#16a34a" strokeWidth="3" strokeDasharray="4,2"/>
+                        <circle cx="40" cy="40" r="29" fill="none" stroke="#16a34a" strokeWidth="1.5"/>
+                        <text x="40" y="37" textAnchor="middle" fill="#16a34a" fontSize="9" fontWeight="bold" fontFamily="serif">THANK YOU</text>
+                        <text x="40" y="48" textAnchor="middle" fill="#16a34a" fontSize="13" fontWeight="900" fontFamily="serif">PAID</text>
+                        <path d="M15 55 Q40 52 65 55" fill="none" stroke="#16a34a" strokeWidth="1.5"/>
+                      </svg>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bill to */}
+            <div className="bg-slate-50 rounded-xl p-4 mb-6 flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs text-slate-400 font-semibold mb-1">Bill and Ship To</div>
+                <div className="font-bold text-slate-800">{buyerName || 'Customer Name'}</div>
+                {buyerPhone && <div className="text-sm text-slate-600">Phone: {buyerPhone}</div>}
+                {buyerGST && <div className="text-sm text-slate-600">GSTIN: {buyerGST}</div>}
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-slate-400">Total amount</div>
+                <div className="text-3xl font-black text-slate-900">{grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+                <div className="text-xs text-slate-500 italic">{toWords(grandTotal)}</div>
+              </div>
+            </div>
+
+            {/* Items table */}
+            <table className="w-full text-sm mb-4">
+              <thead>
+                <tr className="border-b-2 border-slate-200 text-slate-500 text-xs uppercase tracking-wide">
+                  <th className="pb-2 text-left font-semibold pr-2 w-8">#</th>
+                  <th className="pb-2 text-left font-semibold pr-2">Item Details</th>
+                  <th className="pb-2 text-right font-semibold pr-4">Price/Unit</th>
+                  <th className="pb-2 text-right font-semibold pr-4">Qty</th>
+                  <th className="pb-2 text-right font-semibold pr-4">Rate</th>
+                  <th className="pb-2 text-right font-semibold pr-4">Total Tax</th>
+                  <th className="pb-2 text-right font-semibold">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => {
+                  const lineTotal = item.qty * item.rate;
+                  const lineTax = (lineTotal * item.tax) / 100;
+                  return (
+                    <tr key={item.id} className="border-b border-slate-100">
+                      <td className="py-2 text-slate-400 pr-2">{String(idx + 1).padStart(2,'0')}</td>
+                      <td className="py-2 font-medium text-slate-800 pr-2">{item.description || '—'}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{item.rate.toLocaleString('en-IN')}/unit</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{item.qty}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{lineTotal.toLocaleString('en-IN')}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{item.tax > 0 ? lineTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
+                      <td className="py-2 text-right font-semibold text-slate-800">{(lineTotal + lineTax).toLocaleString('en-IN', {maximumFractionDigits:2})}</td>
+                    </tr>
+                  );
+                })}
+                {/* Sub-total row */}
+                <tr className="border-b border-slate-200 bg-slate-50/60">
+                  <td colSpan={2} className="py-2 font-semibold text-slate-600 text-xs uppercase">Sub-total Amount</td>
+                  <td className="py-2 text-right text-slate-500 pr-4" />
+                  <td className="py-2 text-right text-slate-600 pr-4">{items.reduce((s,i) => s + i.qty, 0)}</td>
+                  <td className="py-2 text-right text-slate-600 pr-4">{subtotal.toLocaleString('en-IN')}</td>
+                  <td className="py-2 text-right text-slate-600 pr-4">{totalTax > 0 ? totalTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
+                  <td className="py-2 text-right font-semibold text-slate-800">{(subtotal + totalTax).toLocaleString('en-IN', {maximumFractionDigits:2})}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Discount row */}
+            {discount > 0 && (
+              <div className="flex justify-end mb-2">
+                <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-2 text-sm flex items-center gap-3">
+                  <span className="text-green-700 font-semibold">
+                    Coupon{couponCode ? ` "${couponCode}"` : ''} Discount
+                  </span>
+                  <span className="text-green-800 font-black">− ₹{discount.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Grand total */}
+            <div className="flex justify-end mb-6">
+              <div className="text-right">
+                <div className="text-sm text-slate-500 font-semibold">Total amount</div>
+                <div className="text-4xl font-black text-slate-900">{grandTotal.toLocaleString('en-IN', {maximumFractionDigits:2})}</div>
+                <div className="text-xs text-slate-500 italic">{toWords(grandTotal)}</div>
+                <div className="text-xs text-slate-400 mt-1">Is reverse charge applicable? No</div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 pt-4 text-center text-xs text-slate-400 italic mb-4">
+              ~ THIS IS A DIGITALLY CREATED INVOICE ~
+            </div>
+            <div className="flex justify-between items-end text-xs text-slate-500">
+              <span>Thank you for the business.</span>
+              <span className="font-semibold uppercase tracking-wider text-slate-600">Authorised Signature</span>
+            </div>
+          </div>
+
+          {/* Red bottom bar */}
+          <div className="h-2 bg-red-500" />
+        </div>
+      </div>
+
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #invoice-preview, #invoice-preview * { visibility: visible; }
+          #invoice-preview { position: fixed; top: 0; left: 0; width: 100%; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   return (
@@ -2833,6 +3219,8 @@ export default function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/faq" element={<FAQPage />} />
         <Route path="/contact" element={<ContactPage />} />
+        <Route path="/tools" element={<ToolsHubPage />} />
+        <Route path="/tools/invoice-maker" element={<InvoiceMakerPage />} />
         <Route path="/saaki" element={<AdminPage />} />
       </Routes>
     </BrowserRouter>
