@@ -2943,20 +2943,217 @@ function InvoiceMakerPage() {
   const [invoiceDownloading, setInvoiceDownloading] = useState(false);
 
   const exportInvoicePDF = async () => {
-    const el = document.getElementById('invoice-preview');
-    if (!el) return;
     setInvoiceDownloading(true);
     await new Promise(r => setTimeout(r, 100));
     try {
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const pw = pdf.internal.pageSize.getWidth();
-      const ph = pdf.internal.pageSize.getHeight();
-      pdf.addImage(imgData, 'PNG', 0, 0, pw, ph);
+      const pw = 210;
+      const margin = 14;
+      const contentW = pw - margin * 2;
+      let y = 0;
+
+      // Red top bar
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(0, 0, pw, 4, 'F');
+      y = 10;
+
+      // Seller logo circle
+      pdf.setFillColor(239, 68, 68);
+      pdf.circle(margin + 4, y + 2, 4, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text((sellerName || 'B')[0].toUpperCase(), margin + 4, y + 3.5, { align: 'center' });
+
+      // Seller name
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(sellerName || 'Your Business', margin + 10, y + 3);
+      y += 8;
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 116, 139);
+      if (sellerAddress) { pdf.text(sellerAddress, margin, y); y += 5; }
+      if (sellerPhone) { pdf.text('Phone: ' + sellerPhone, margin, y); y += 5; }
+      if (sellerGST) { pdf.text('GSTIN: ' + sellerGST, margin, y); y += 5; }
+
+      // Invoice No + Date (top right)
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Invoice No. ' + (invoiceNo || '—'), pw - margin, 14, { align: 'right' });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(100, 116, 139);
+      pdf.text('Invoice Date: ' + (invoiceDate ? new Date(invoiceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'), pw - margin, 20, { align: 'right' });
+
+      // PAID stamp
+      if (isPaid) {
+        pdf.setDrawColor(22, 163, 74);
+        pdf.setLineWidth(0.6);
+        pdf.circle(pw - margin - 10, 16, 10);
+        pdf.circle(pw - margin - 10, 16, 8.5);
+        pdf.setTextColor(22, 163, 74);
+        pdf.setFontSize(5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('THANK YOU', pw - margin - 10, 13.5, { align: 'center' });
+        pdf.setFontSize(9);
+        pdf.text('PAID', pw - margin - 10, 18, { align: 'center' });
+      }
+
+      y = Math.max(y, 28) + 4;
+
+      // Bill to box
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.3);
+      pdf.roundedRect(margin, y, contentW, 22, 2, 2, 'FD');
+      pdf.setTextColor(148, 163, 184);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Bill and Ship To', margin + 3, y + 5);
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(buyerName || 'Customer Name', margin + 3, y + 11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      if (buyerPhone) pdf.text('Phone: ' + buyerPhone, margin + 3, y + 16);
+      if (buyerGST) pdf.text('GSTIN: ' + buyerGST, margin + 3, y + 20);
+
+      // Total amount right side of bill box
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(7);
+      pdf.text('Total amount', pw - margin - 3, y + 7, { align: 'right' });
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }), pw - margin - 3, y + 15, { align: 'right' });
+      pdf.setFontSize(6);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(toWords(grandTotal), pw - margin - 3, y + 20, { align: 'right' });
+
+      y += 28;
+
+      // Table header
+      pdf.setFillColor(241, 245, 249);
+      pdf.rect(margin, y, contentW, 7, 'F');
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      const cols = [margin + 2, margin + 8, margin + 90, margin + 115, margin + 133, margin + 155, margin + 178];
+      ['#', 'ITEM DETAILS', 'PRICE/UNIT', 'QTY', 'RATE', 'TOTAL TAX', 'TOTAL'].forEach((h, i) => {
+        pdf.text(h, cols[i], y + 4.5, { align: i >= 2 ? 'right' : 'left' });
+      });
+      y += 7;
+
+      // Table rows
+      pdf.setFont('helvetica', 'normal');
+      items.forEach((item, idx) => {
+        const qty = Number(item.qty) || 0;
+        const rate = Number(item.rate) || 0;
+        const tax = Number(item.tax) || 0;
+        const lineTotal = qty * rate;
+        const lineTax = (lineTotal * tax) / 100;
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.2);
+        pdf.line(margin, y, margin + contentW, y);
+        pdf.setTextColor(71, 85, 105);
+        pdf.setFontSize(8);
+        pdf.text(String(idx + 1).padStart(2, '0'), cols[0], y + 5);
+        pdf.setTextColor(15, 23, 42);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(item.description || '—', cols[1], y + 5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(rate.toLocaleString('en-IN') + '/unit', cols[2], y + 5, { align: 'right' });
+        pdf.text(String(qty), cols[3], y + 5, { align: 'right' });
+        pdf.text(lineTotal.toLocaleString('en-IN'), cols[4], y + 5, { align: 'right' });
+        pdf.text(tax > 0 ? lineTax.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '–', cols[5], y + 5, { align: 'right' });
+        pdf.setTextColor(15, 23, 42);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text((lineTotal + lineTax).toLocaleString('en-IN', { maximumFractionDigits: 2 }), cols[6], y + 5, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+        y += 8;
+      });
+
+      // Sub-total row
+      pdf.setFillColor(248, 250, 252);
+      pdf.rect(margin, y, contentW, 7, 'F');
+      pdf.setTextColor(71, 85, 105);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SUB-TOTAL AMOUNT', cols[1], y + 4.5);
+      pdf.text(subtotal.toLocaleString('en-IN'), cols[4], y + 4.5, { align: 'right' });
+      pdf.text(totalTax > 0 ? totalTax.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '–', cols[5], y + 4.5, { align: 'right' });
+      pdf.text((subtotal + totalTax).toLocaleString('en-IN', { maximumFractionDigits: 2 }), cols[6], y + 4.5, { align: 'right' });
+      y += 10;
+
+      // Discount row
+      if (discount > 0) {
+        pdf.setDrawColor(187, 247, 208);
+        pdf.setFillColor(240, 253, 244);
+        pdf.setLineWidth(0.3);
+        pdf.roundedRect(pw - margin - 70, y, 70, 8, 2, 2, 'FD');
+        pdf.setTextColor(21, 128, 61);
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Coupon' + (couponCode ? ` "${couponCode}"` : '') + ' Discount  − ₹' + discount.toLocaleString('en-IN'), pw - margin - 2, y + 5.5, { align: 'right' });
+        y += 12;
+      }
+
+      // Grand total
+      pdf.setTextColor(100, 116, 139);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('Total amount', pw - margin, y, { align: 'right' });
+      y += 6;
+      pdf.setTextColor(15, 23, 42);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }), pw - margin, y, { align: 'right' });
+      y += 6;
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(toWords(grandTotal), pw - margin, y, { align: 'right' });
+      pdf.text('Is reverse charge applicable? No', pw - margin, y + 5, { align: 'right' });
+      y += 14;
+
+      // Divider
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.3);
+      pdf.line(margin, y, margin + contentW, y);
+      y += 6;
+
+      // Footer
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(148, 163, 184);
+      pdf.text('~ THIS IS A DIGITALLY CREATED INVOICE ~', pw / 2, y, { align: 'center' });
+      y += 7;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('Thank you for the business.', margin, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('AUTHORISED SIGNATURE', pw - margin, y, { align: 'right' });
+      y += 8;
+
+      // Red bottom bar
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(0, y, pw, 4, 'F');
+
       pdf.save(`invoice-${invoiceNo || 'writeify'}.pdf`);
+    } catch (err) {
+      console.error('Invoice PDF error:', err);
+      alert('PDF generation failed: ' + String(err));
     } finally {
-      await new Promise(r => setTimeout(r, 2500));
+      await new Promise(r => setTimeout(r, 800));
       setInvoiceDownloading(false);
     }
   };
