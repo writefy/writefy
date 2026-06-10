@@ -2886,9 +2886,9 @@ function ToolsHubPage() {
 interface InvoiceItem {
   id: string;
   description: string;
-  qty: number;
-  rate: number;
-  tax: number;
+  qty: number | '';
+  rate: number | '';
+  tax: number | '';
 }
 
 function generateId() {
@@ -2907,19 +2907,19 @@ function InvoiceMakerPage() {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [isPaid, setIsPaid] = useState(false);
   const [couponCode, setCouponCode] = useState('');
-  const [couponAmount, setCouponAmount] = useState(0);
+  const [couponAmount, setCouponAmount] = useState<number | ''>('');
   const [items, setItems] = useState<InvoiceItem[]>([
-    { id: generateId(), description: '', qty: 1, rate: 0, tax: 0 },
+    { id: generateId(), description: '', qty: '', rate: '', tax: '' },
   ]);
 
-  const addItem = () => setItems(prev => [...prev, { id: generateId(), description: '', qty: 1, rate: 0, tax: 0 }]);
+  const addItem = () => setItems(prev => [...prev, { id: generateId(), description: '', qty: '', rate: '', tax: '' }]);
   const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id));
   const updateItem = (id: string, field: keyof InvoiceItem, value: string | number) =>
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
 
-  const subtotal = items.reduce((s, i) => s + i.qty * i.rate, 0);
-  const totalTax = items.reduce((s, i) => s + (i.qty * i.rate * i.tax) / 100, 0);
-  const discount = couponAmount > 0 ? couponAmount : 0;
+  const subtotal = items.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
+  const totalTax = items.reduce((s, i) => s + ((Number(i.qty) || 0) * (Number(i.rate) || 0) * (Number(i.tax) || 0)) / 100, 0);
+  const discount = couponAmount !== '' && couponAmount > 0 ? couponAmount : 0;
   const grandTotal = subtotal + totalTax - discount;
 
   function toWords(n: number) {
@@ -2940,7 +2940,26 @@ function InvoiceMakerPage() {
     return fn(int).trim() + ' Rupees Only';
   }
 
-  const handlePrint = () => window.print();
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+
+  const exportInvoicePDF = async () => {
+    const el = document.getElementById('invoice-preview');
+    if (!el) return;
+    setInvoiceDownloading(true);
+    await new Promise(r => setTimeout(r, 100));
+    try {
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, 'PNG', 0, 0, pw, ph);
+      pdf.save(`invoice-${invoiceNo || 'writeify'}.pdf`);
+    } finally {
+      await new Promise(r => setTimeout(r, 2500));
+      setInvoiceDownloading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.2),transparent_32rem),linear-gradient(135deg,#f8fafc_0%,#eef2ff_50%,#f8fafc_100%)]">
@@ -3017,13 +3036,13 @@ function InvoiceMakerPage() {
                       <input className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.description} onChange={e => updateItem(item.id, 'description', e.target.value)} placeholder="Item name / details" />
                     </td>
                     <td className="py-1 pr-2">
-                      <input type="number" min={1} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.qty} onChange={e => updateItem(item.id, 'qty', Number(e.target.value))} />
+                      <input type="number" min={1} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="1" value={item.qty} onChange={e => updateItem(item.id, 'qty', e.target.value === '' ? '' : Number(e.target.value))} />
                     </td>
                     <td className="py-1 pr-2">
-                      <input type="number" min={0} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.rate} onChange={e => updateItem(item.id, 'rate', Number(e.target.value))} />
+                      <input type="number" min={0} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="0" value={item.rate} onChange={e => updateItem(item.id, 'rate', e.target.value === '' ? '' : Number(e.target.value))} />
                     </td>
                     <td className="py-1 pr-2">
-                      <input type="number" min={0} max={100} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" value={item.tax} onChange={e => updateItem(item.id, 'tax', Number(e.target.value))} />
+                      <input type="number" min={0} max={100} className="w-full border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="0" value={item.tax} onChange={e => updateItem(item.id, 'tax', e.target.value === '' ? '' : Number(e.target.value))} />
                     </td>
                     <td className="py-1 text-center">
                       <button onClick={() => removeItem(item.id)} className="text-red-400 hover:text-red-600 font-bold text-lg leading-none">×</button>
@@ -3046,7 +3065,7 @@ function InvoiceMakerPage() {
             </div>
             <div className="w-40">
               <label className="text-xs text-slate-500 mb-1 block">Discount Amount (₹)</label>
-              <input type="number" min={0} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" value={couponAmount} onChange={e => setCouponAmount(Number(e.target.value))} />
+              <input type="number" min={0} className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" placeholder="0" value={couponAmount} onChange={e => setCouponAmount(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
             <label className="flex items-center gap-2 cursor-pointer pb-2">
               <input type="checkbox" checked={isPaid} onChange={e => setIsPaid(e.target.checked)} className="w-4 h-4 accent-green-600" />
@@ -3055,10 +3074,30 @@ function InvoiceMakerPage() {
           </div>
         </div>
 
-        {/* Print button */}
+        {/* Download animation overlay */}
+        {invoiceDownloading && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+            <div className="bg-white rounded-[2rem] shadow-2xl p-8 flex flex-col items-center gap-5 w-full max-w-sm">
+              <div className="h-20 w-20 rounded-[1.4rem] bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-xl">
+                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 text-white" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v13m0 0l-4-4m4 4l4-4" />
+                </svg>
+              </div>
+              <div className="text-center">
+                <p className="font-black text-slate-900 text-lg">Generating PDF…</p>
+                <p className="text-slate-500 text-sm mt-1">Rendering invoice, please wait</p>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                <div className="h-2.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 animate-pulse" style={{ width: '75%', transition: 'width 0.6s ease' }} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Download button */}
         <div className="flex gap-3 mb-8 print:hidden">
-          <button onClick={handlePrint} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity">
-            🖨️ Print / Save PDF
+          <button onClick={exportInvoicePDF} disabled={invoiceDownloading} className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg hover:opacity-90 transition-opacity disabled:opacity-60">
+            {invoiceDownloading ? '⏳ Generating…' : '⬇️ Download PDF'}
           </button>
         </div>
 
@@ -3134,16 +3173,16 @@ function InvoiceMakerPage() {
               </thead>
               <tbody>
                 {items.map((item, idx) => {
-                  const lineTotal = item.qty * item.rate;
-                  const lineTax = (lineTotal * item.tax) / 100;
+                  const lineTotal = (Number(item.qty) || 0) * (Number(item.rate) || 0);
+                  const lineTax = (lineTotal * (Number(item.tax) || 0)) / 100;
                   return (
                     <tr key={item.id} className="border-b border-slate-100">
                       <td className="py-2 text-slate-400 pr-2">{String(idx + 1).padStart(2,'0')}</td>
                       <td className="py-2 font-medium text-slate-800 pr-2">{item.description || '—'}</td>
-                      <td className="py-2 text-right text-slate-600 pr-4">{item.rate.toLocaleString('en-IN')}/unit</td>
-                      <td className="py-2 text-right text-slate-600 pr-4">{item.qty}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{(Number(item.rate) || 0).toLocaleString('en-IN')}/unit</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{item.qty || 0}</td>
                       <td className="py-2 text-right text-slate-600 pr-4">{lineTotal.toLocaleString('en-IN')}</td>
-                      <td className="py-2 text-right text-slate-600 pr-4">{item.tax > 0 ? lineTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
+                      <td className="py-2 text-right text-slate-600 pr-4">{(Number(item.tax) || 0) > 0 ? lineTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
                       <td className="py-2 text-right font-semibold text-slate-800">{(lineTotal + lineTax).toLocaleString('en-IN', {maximumFractionDigits:2})}</td>
                     </tr>
                   );
@@ -3152,7 +3191,7 @@ function InvoiceMakerPage() {
                 <tr className="border-b border-slate-200 bg-slate-50/60">
                   <td colSpan={2} className="py-2 font-semibold text-slate-600 text-xs uppercase">Sub-total Amount</td>
                   <td className="py-2 text-right text-slate-500 pr-4" />
-                  <td className="py-2 text-right text-slate-600 pr-4">{items.reduce((s,i) => s + i.qty, 0)}</td>
+                  <td className="py-2 text-right text-slate-600 pr-4">{items.reduce((s,i) => s + (Number(i.qty) || 0), 0)}</td>
                   <td className="py-2 text-right text-slate-600 pr-4">{subtotal.toLocaleString('en-IN')}</td>
                   <td className="py-2 text-right text-slate-600 pr-4">{totalTax > 0 ? totalTax.toLocaleString('en-IN', {maximumFractionDigits:2}) : '–'}</td>
                   <td className="py-2 text-right font-semibold text-slate-800">{(subtotal + totalTax).toLocaleString('en-IN', {maximumFractionDigits:2})}</td>
@@ -3197,14 +3236,6 @@ function InvoiceMakerPage() {
         </div>
       </div>
 
-      {/* Print styles */}
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #invoice-preview, #invoice-preview * { visibility: visible; }
-          #invoice-preview { position: fixed; top: 0; left: 0; width: 100%; }
-        }
-      `}</style>
     </div>
   );
 }
