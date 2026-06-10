@@ -2952,30 +2952,68 @@ function InvoiceMakerPage() {
       const previewEl = document.getElementById('invoice-preview');
       if (!previewEl) throw new Error('Preview element not found');
 
-      // html2canvas 1.x can't parse oklch (Tailwind v4 CSS vars).
-      // Fix: walk every element in the clone and force computed RGB values inline.
+      // html2canvas 1.x crashes on oklch() colors (used by Tailwind v4).
+      // Modern Chrome/Firefox also return oklch strings from getComputedStyle,
+      // so we cannot rely on the browser to convert them for us.
+      // Solution: parse and convert oklch() → rgb() manually via color math.
+
+      function oklchToRgb(val: string): string {
+        const m = val.match(/oklch\(\s*([\d.%]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\s*\)/i);
+        if (!m) return val;
+        const L = parseFloat(m[1]) / (m[1].includes('%') ? 100 : 1);
+        const C = parseFloat(m[2]);
+        const H = parseFloat(m[3]) * (Math.PI / 180);
+        const alpha = m[4] !== undefined ? parseFloat(m[4]) : 1;
+        // OKLCh → OKLab
+        const a = C * Math.cos(H);
+        const b = C * Math.sin(H);
+        // OKLab → linear sRGB
+        const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+        const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+        const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+        const ll = l_ * l_ * l_;
+        const mm = m_ * m_ * m_;
+        const ss = s_ * s_ * s_;
+        const r =  4.0767416621 * ll - 3.3077115913 * mm + 0.2309699292 * ss;
+        const g = -1.2684380046 * ll + 2.6097574011 * mm - 0.3413193965 * ss;
+        const bv = -0.0041960863 * ll - 0.7034186147 * mm + 1.7076147010 * ss;
+        const toSrgb = (x: number) => {
+          const c = Math.max(0, Math.min(1, x));
+          return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+        };
+        const ri = Math.round(toSrgb(r) * 255);
+        const gi = Math.round(toSrgb(g) * 255);
+        const bi = Math.round(toSrgb(bv) * 255);
+        return alpha < 1 ? `rgba(${ri},${gi},${bi},${alpha})` : `rgb(${ri},${gi},${bi})`;
+      }
+
+      function resolveColor(val: string): string {
+        if (!val || !val.includes('oklch')) return val;
+        return val.replace(/oklch\([^)]+\)/gi, match => oklchToRgb(match));
+      }
+
+      const colorProps = [
+        'color', 'background-color',
+        'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+        'outline-color', 'text-decoration-color',
+      ];
+
       const canvas = await html2canvas(previewEl, {
         scale: 3,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
-        onclone: (_doc, el) => {
-          const colorProps = [
-            'color', 'background-color',
-            'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
-            'outline-color', 'text-decoration-color',
-          ];
-          el.querySelectorAll<HTMLElement>('*').forEach(node => {
-            const cs = window.getComputedStyle(node);
+        onclone: (_clonedDoc, el) => {
+          const liveNodes = Array.from(previewEl.querySelectorAll<HTMLElement>('*'));
+          const cloneNodes = Array.from(el.querySelectorAll<HTMLElement>('*'));
+          liveNodes.forEach((liveNode, i) => {
+            const cloneNode = cloneNodes[i];
+            if (!cloneNode) return;
+            const cs = window.getComputedStyle(liveNode);
             colorProps.forEach(prop => {
               const val = cs.getPropertyValue(prop);
-              // getComputedStyle returns rgb/rgba — safe to inline directly
-              if (val && val !== '' && !val.startsWith('oklch')) {
-                node.style.setProperty(prop, val, 'important');
-              } else if (val && val.startsWith('oklch')) {
-                // Fallback for any remaining oklch
-                node.style.setProperty(prop, prop === 'background-color' ? '#ffffff' : '#1e293b', 'important');
-              }
+              if (!val || val === '') return;
+              cloneNode.style.setProperty(prop, resolveColor(val), 'important');
             });
           });
         },
