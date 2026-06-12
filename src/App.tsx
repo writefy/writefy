@@ -17,7 +17,7 @@ const MIN_LINE_HEIGHT_PX = 40;
 
 // Paper interior padding
 const PAPER_PAD_LEFT = 60;   // px left margin of text area (before user's margin)
-const PAPER_PAD_RIGHT = 48;  // px right margin
+const PAPER_PAD_RIGHT = 10;  // px right margin (kept small/near-zero to match live preview)
 const PAPER_PAD_TOP = 28;    // px before first ruled line
 const PAPER_PAD_BOTTOM = 32; // px at bottom
 
@@ -38,6 +38,13 @@ function hexWithAlpha(hex: string, alpha: number) {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// Deterministic pseudo-random in [0,1) — used for "pen pressure" jitter so the
+// same character always gets the same micro-variation (stable across re-renders/exports).
+function prand(seed: number) {
+  const x = Math.sin(seed * 12.9898) * 43758.5453123;
+  return x - Math.floor(x);
 }
 
 // ─── EXPORT ANIMATION OVERLAY ────────────────────────────────────────────────
@@ -136,6 +143,7 @@ function renderHandwritingCanvas(
     topicFontSize?: number;
     topicOffsetX?: number;
     topicOffsetY?: number;
+    pressureEffect?: boolean;
   }
 ) {
   const scale = options.scale ?? 2;
@@ -328,6 +336,7 @@ function renderHandwritingCanvas(
   ctx.font = `${options.fontSize}px "${options.font}", cursive`;
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = (options.textAlign as CanvasTextAlign) || 'left';
+  if (options.pressureEffect) ctx.textAlign = 'left'; // per-character drawing needs left anchor
 
   if (options.showEmpty && pageLines.length === 0) {
     ctx.fillStyle = hexWithAlpha(options.defaultColor, 0.3);
@@ -337,11 +346,49 @@ function renderHandwritingCanvas(
       const lineText = lineChunks.map(c => c.text).join('');
       let x = options.textAlign === 'center' ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2 : options.textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width : textX;
       const y = firstBaseline + lineIndex * options.lineHeight;
-      lineChunks.forEach(chunk => {
-        ctx.fillStyle = chunk.color;
-        ctx.fillText(chunk.text, x, y);
-        x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
-      });
+      if (options.pressureEffect) {
+        let charIdx = 0;
+        lineChunks.forEach(chunk => {
+          for (let i = 0; i < chunk.text.length; i++) {
+            const ch = chunk.text[i];
+            const w = ctx.measureText(ch).width;
+            const seed = lineIndex * 5000 + charIdx;
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.4;     // ±1.2px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.07;  // ±~2° tilt
+            const inkAlpha = 0.82 + prand(seed * 7 + 3) * 0.18; // 0.82–1.0 pressure variation
+            const strokeW = prand(seed * 7 + 5) * 0.9;          // 0–0.9px extra weight on some strokes
+            ctx.save();
+            ctx.translate(x, y + jY);
+            ctx.rotate(jRot);
+            // Indentation shadow — mimics the groove pressed into the paper
+            ctx.globalAlpha = 0.10;
+            ctx.fillStyle = '#000000';
+            ctx.fillText(ch, 0.7, 0.9);
+            // Ink — fill + variable-width stroke so some strokes look heavier
+            // (simulates downstroke pressure vs. light upstrokes)
+            ctx.globalAlpha = inkAlpha;
+            ctx.fillStyle = chunk.color;
+            ctx.fillText(ch, 0, 0);
+            if (strokeW > 0.2) {
+              ctx.lineWidth = strokeW;
+              ctx.lineJoin = 'round';
+              ctx.strokeStyle = chunk.color;
+              ctx.globalAlpha = inkAlpha * 0.85;
+              ctx.strokeText(ch, 0, 0);
+            }
+            ctx.restore();
+            x += w;
+            charIdx++;
+          }
+          x += (options.wordSpacing ?? 0);
+        });
+      } else {
+        lineChunks.forEach(chunk => {
+          ctx.fillStyle = chunk.color;
+          ctx.fillText(chunk.text, x, y);
+          x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
+        });
+      }
     });
   }
   ctx.restore();
@@ -546,10 +593,11 @@ interface HandwritingSvgProps {
   topOffset?: number;
   textAlign?: 'left'|'center'|'right';
   firstBaselineOverride?: number;
+  pressureEffect?: boolean;
 }
 
 const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
-  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride,
+  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride, pressureEffect = false,
 }) => {
   // firstBaseline = y where alphabetic baseline sits (bottom of A,B,C; descenders g,p,y go below)
   // This MUST exactly match the y of ruled lines drawn in PaperBg
@@ -584,17 +632,79 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
         ) : (
           pageLines.map((lineChunks, idx) => {
             const y = firstBaseline + idx * lineHeight;
+            const tx = textAlign === 'center' ? A4_WIDTH_PX / 2 : textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT : x;
+            const anchor = textAlign === 'center' ? 'middle' : textAlign === 'right' ? 'end' : 'start';
+            const wsStyle = { wordSpacing: wordSpacing > 0 ? `${wordSpacing}px` : undefined };
+
+            if (pressureEffect && lineChunks.length > 0) {
+              let charIdx = 0;
+              let prevOffset = 0;
+              return (
+                <g key={idx}>
+                  {/* Indentation shadow — mimics the groove pressed into the paper */}
+                  <text
+                    x={tx} y={y} dx="0.7" dy="0.9"
+                    fontFamily={`'${font}', cursive`}
+                    fontSize={fontSize}
+                    dominantBaseline="alphabetic"
+                    textAnchor={anchor}
+                    fill="#000000"
+                    fillOpacity={0.1}
+                    xmlSpace="preserve"
+                    style={wsStyle}
+                  >
+                    {lineChunks.map(c => c.text).join('')}
+                  </text>
+                  {/* Ink — drawn character-by-character with deterministic micro-jitter */}
+                  <text
+                    x={tx} y={y}
+                    fontFamily={`'${font}', cursive`}
+                    fontSize={fontSize}
+                    dominantBaseline="alphabetic"
+                    textAnchor={anchor}
+                    xmlSpace="preserve"
+                    style={{ ...wsStyle, paintOrder: 'stroke fill' }}
+                  >
+                    {lineChunks.map((chunk, ci) =>
+                      Array.from(chunk.text).map((ch, k) => {
+                        const seed = idx * 5000 + charIdx;
+                        charIdx++;
+                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.4;  // ±1.2px
+                        const opacity = 0.82 + prand(seed * 7 + 3) * 0.18; // 0.82–1.0
+                        const strokeW = prand(seed * 7 + 5) * 0.9;          // 0–0.9px extra weight
+                        const dy = offset - prevOffset;
+                        prevOffset = offset;
+                        return (
+                          <tspan
+                            key={`${ci}-${k}`}
+                            dy={dy}
+                            fill={chunk.color}
+                            fillOpacity={opacity}
+                            stroke={strokeW > 0.2 ? chunk.color : 'none'}
+                            strokeWidth={strokeW > 0.2 ? strokeW : undefined}
+                            strokeOpacity={strokeW > 0.2 ? opacity * 0.85 : undefined}
+                          >
+                            {ch === ' ' ? '\u00A0' : ch}
+                          </tspan>
+                        );
+                      })
+                    )}
+                  </text>
+                </g>
+              );
+            }
+
             return (
               <text
                 key={idx}
-                x={textAlign === 'center' ? A4_WIDTH_PX / 2 : textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT : x}
+                x={tx}
                 y={y}
                 fontFamily={`'${font}', cursive`}
                 fontSize={fontSize}
                 dominantBaseline="alphabetic"
-                textAnchor={textAlign === 'center' ? 'middle' : textAlign === 'right' ? 'end' : 'start'}
+                textAnchor={anchor}
                 xmlSpace="preserve"
-                style={{ wordSpacing: wordSpacing > 0 ? `${wordSpacing}px` : undefined }}
+                style={wsStyle}
               >
                 {lineChunks.length === 0 ? (
                   <tspan fill="transparent"> </tspan>
@@ -634,6 +744,7 @@ interface PageProps {
   topicFontSize?: number;
   topicOffsetX?: number;
   topicOffsetY?: number;
+  pressureEffect?: boolean;
 }
 
 const A4Page: React.FC<PageProps> = ({
@@ -641,7 +752,7 @@ const A4Page: React.FC<PageProps> = ({
   pageNumber, totalPages, showEmpty, defaultColor, wordSpacing = 0,
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
   topic = '', topicColor, topicFontSize = 20,
-  topicOffsetX = 0, topicOffsetY = 0,
+  topicOffsetX = 0, topicOffsetY = 0, pressureEffect = false,
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -786,6 +897,7 @@ const A4Page: React.FC<PageProps> = ({
         showEmpty={showEmpty}
         defaultColor={defaultColor}
         textAlign={textAlign}
+        pressureEffect={pressureEffect}
         firstBaselineOverride={
           isDouble
             ? DBL_HEADER_H + Math.round(lineHeight * 0.85)           // matches dblTextFirstY in PaperBg
@@ -824,10 +936,10 @@ Mercury takes 88 days to orbit the Sun.
 Neptune takes 165 years to orbit the Sun.
 Saturn has rings made of ice and rock.
 Gravity of Sun keeps all planets in orbit.`;
-  const DEMO_SPANS: ColourSpan[] = [{ start: 0, end: 46, color: '#ef4444' }, { start: 47, end: 1140, color: '#2563eb' }, { start: 1141, end: 1152, color: '#000000' }, { start: 1153, end: 1195, color: '#16a34a' }, { start: 1196, end: 1233, color: '#16a34a' }, { start: 1234, end: 1258, color: '#16a34a' }, { start: 1259, end: 1302, color: '#16a34a' }, { start: 1303, end: 1351, color: '#16a34a' }, { start: 1352, end: 1393, color: '#16a34a' }, { start: 1394, end: 1433, color: '#16a34a' }, { start: 1434, end: 1475, color: '#16a34a' }, { start: 1476, end: 1514, color: '#16a34a' }, { start: 1515, end: 1557, color: '#16a34a' }];
+  const DEMO_SPANS: ColourSpan[] = [{ start: 0, end: 46, color: '#ef4444' }, { start: 47, end: 1140, color: '#1e3a8a' }, { start: 1141, end: 1152, color: '#000000' }, { start: 1153, end: 1195, color: '#16a34a' }, { start: 1196, end: 1233, color: '#16a34a' }, { start: 1234, end: 1258, color: '#16a34a' }, { start: 1259, end: 1302, color: '#16a34a' }, { start: 1303, end: 1351, color: '#16a34a' }, { start: 1352, end: 1393, color: '#16a34a' }, { start: 1394, end: 1433, color: '#16a34a' }, { start: 1434, end: 1475, color: '#16a34a' }, { start: 1476, end: 1514, color: '#16a34a' }, { start: 1515, end: 1557, color: '#16a34a' }];
   const [rawText, setRawText] = useState(DEMO_TEXT);
   const [spans, setSpans] = useState<ColourSpan[]>(DEMO_SPANS);
-  const [defaultColor, setDefaultColor] = useState<LineColor>('#1e40af');
+  const [defaultColor, setDefaultColor] = useState<LineColor>('#1e3a8a');
   const [font, setFont] = useState<FontFamily>('Caveat');
   const [fontSize, setFontSize] = useState(22);
   const [paperType, setPaperType] = useState<PaperType>('double');
@@ -841,6 +953,7 @@ Gravity of Sun keeps all planets in orbit.`;
   const [topicFontSize, setTopicFontSize] = useState(20);
   const [topicOffsetX, setTopicOffsetX] = useState(0);
   const [topicOffsetY, setTopicOffsetY] = useState(0);
+  const [pressureEffect, setPressureEffect] = useState(true);
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -1018,6 +1131,7 @@ Gravity of Sun keeps all planets in orbit.`;
           topicFontSize,
           topicOffsetX,
           topicOffsetY,
+          pressureEffect,
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -1039,7 +1153,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect]);
 
   const exportPDF = useCallback(async () => {
     const container = previewContainerRef.current;
@@ -1076,6 +1190,7 @@ Gravity of Sun keeps all planets in orbit.`;
             topicFontSize,
             topicOffsetX,
             topicOffsetY,
+            pressureEffect,
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1096,7 +1211,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1202,11 +1317,12 @@ Gravity of Sun keeps all planets in orbit.`;
             </div>
           </div>
 
-          {/* Default Ink Color */}
+          {/* Default Ink Colour */}
           <div className="rounded-[1.5rem] border border-white/75 bg-white/82 p-4 shadow-xl shadow-slate-950/5 backdrop-blur-2xl ring-1 ring-slate-950/[0.02]">
             <h2 className="font-black tracking-tight text-slate-950 text-sm flex items-center gap-2 mb-3">
               <span className="h-2 w-2 rounded-full bg-purple-500 shadow-[0_0_0_4px_rgba(168,85,247,0.14)]" /> Default Ink Colour
             </h2>
+            <p className="text-xs text-slate-400 mb-3">Colour for any text that hasn't been highlighted with a specific colour</p>
             <div className="flex flex-wrap gap-3">
               {allColors.map(c => (
                 <button
@@ -1276,7 +1392,19 @@ Gravity of Sun keeps all planets in orbit.`;
                 <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>0</span><span>20px</span></div>
               </div>
 
-              {/* Text Alignment */}
+              {/* Pen Pressure / Realistic Handwriting toggle */}
+              <div className="flex items-center justify-between bg-slate-50 rounded-2xl px-3 py-2.5">
+                <div>
+                  <p className="text-xs font-bold text-slate-700">Realistic Pen Pressure</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Adds natural ink &amp; paper-press texture</p>
+                </div>
+                <button
+                  onClick={() => setPressureEffect(p => !p)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${pressureEffect ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${pressureEffect ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Text Alignment</label>
                 <div className="flex gap-2">
@@ -1495,7 +1623,7 @@ Gravity of Sun keeps all planets in orbit.`;
                 // Map common hex codes to friendly names
                 const hexNames: Record<string, string> = {
                   '#ef4444': 'Red', '#2563eb': 'Blue', '#16a34a': 'Green',
-                  '#000000': 'Black', '#1a1a1a': 'Black', '#1e40af': 'Blue',
+                  '#000000': 'Black', '#1a1a1a': 'Black', '#1e40af': 'Blue', '#1e3a8a': 'Blue', '#2563eb': 'Blue',
                   '#c0392b': 'Red', '#15803d': 'Green', '#7e22ce': 'Purple',
                   '#c2410c': 'Orange', '#be185d': 'Pink', '#92400e': 'Brown',
                 };
@@ -1546,6 +1674,7 @@ Gravity of Sun keeps all planets in orbit.`;
                   topicFontSize={topicFontSize}
                   topicOffsetX={topicOffsetX}
                   topicOffsetY={topicOffsetY}
+                  pressureEffect={pressureEffect}
                 />
               </div>
             ))}
@@ -2894,7 +3023,7 @@ function AdminPage() {
               <div>
                 <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Built-in Colors</p>
                 <div className="grid grid-cols-4 gap-2">
-                  {[{hex:'#1a1a1a',label:'Black'},{hex:'#1e40af',label:'Blue'},{hex:'#c0392b',label:'Red'},{hex:'#15803d',label:'Green'},{hex:'#7e22ce',label:'Purple'},{hex:'#c2410c',label:'Orange'},{hex:'#be185d',label:'Pink'},{hex:'#92400e',label:'Brown'}].map(c => (
+                  {[{hex:'#1a1a1a',label:'Black'},{hex:'#1e3a8a',label:'Blue'},{hex:'#c0392b',label:'Red'},{hex:'#15803d',label:'Green'},{hex:'#7e22ce',label:'Purple'},{hex:'#c2410c',label:'Orange'},{hex:'#be185d',label:'Pink'},{hex:'#92400e',label:'Brown'}].map(c => (
                     <div key={c.hex} className="flex flex-col items-center gap-1 p-2 bg-slate-50 rounded-xl border border-slate-100">
                       <div className="h-8 w-8 rounded-full border-2 border-white shadow" style={{ background: c.hex }} />
                       <span className="text-xs text-slate-500">{c.label}</span>
