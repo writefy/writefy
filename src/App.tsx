@@ -131,6 +131,10 @@ function renderHandwritingCanvas(
     totalPages?: number;
     showHeader?: boolean;
     textAlign?: string;
+    topic?: string;
+    topicColor?: LineColor;
+    topicFontSize?: number;
+    topicPosition?: 'left' | 'center' | 'right';
   }
 ) {
   const scale = options.scale ?? 2;
@@ -218,6 +222,30 @@ function renderHandwritingCanvas(
     ctx.fillText('Page', bx + 30, by + 41);
     ctx.font = `12px "${hFont}", cursive`;
     ctx.fillText(String(options.pageNumber ?? 1), bx + 70, by + 41);
+    ctx.restore();
+  }
+
+  // ── Topic label (independent of header — sits on the pink line, or at the
+  //     top of the first ruled line when no header) ────────────────────────
+  if (options.topic && options.topic.trim()) {
+    ctx.save();
+    const hasPinkLine = options.showHeader || options.paperType === 'double';
+    const topicBaselineY = hasPinkLine ? 34 : (PAPER_PAD_TOP - 6);
+    const tColor = options.topicColor || options.defaultColor;
+    const tSize = options.topicFontSize ?? 20;
+    ctx.fillStyle = tColor;
+    ctx.font = `${tSize}px "${options.font}", cursive`;
+    const pos = options.topicPosition || 'left';
+    ctx.textAlign = pos === 'center' ? 'center' : pos === 'right' ? 'right' : 'left';
+    let tx: number;
+    if (pos === 'left') {
+      tx = options.paperType === 'double' ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
+    } else if (pos === 'center') {
+      tx = A4_WIDTH_PX / 2;
+    } else {
+      tx = A4_WIDTH_PX - PAPER_PAD_RIGHT;
+    }
+    ctx.fillText(options.topic, tx, topicBaselineY);
     ctx.restore();
   }
 
@@ -604,12 +632,17 @@ interface PageProps {
   onDateChange?: (v: string) => void;
   showHeader?: boolean;
   textAlign?: 'left'|'center'|'right';
+  topic?: string;
+  topicColor?: LineColor;
+  topicFontSize?: number;
+  topicPosition?: 'left'|'center'|'right';
 }
 
 const A4Page: React.FC<PageProps> = ({
   pageLines, font, fontSize, marginLeft, lineHeight, paperType,
   pageNumber, totalPages, showEmpty, defaultColor, wordSpacing = 0,
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
+  topic = '', topicColor, topicFontSize = 20, topicPosition = 'left',
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -632,6 +665,36 @@ const A4Page: React.FC<PageProps> = ({
       }}
     >
       <PaperBg type={paperType} marginLeftPx={textAreaLeft} lineHeight={lineHeight} showHeader={showHeader} />
+
+      {/* ── Topic label: sits on the pink line (header present), or at the
+            top of the first ruled line (no header). Freely positionable
+            left/center/right; locked in place so it never shifts with text. */}
+      {topic && topic.trim() && (() => {
+        const hasPinkLine = showHeader || isDouble;
+        const topPx = hasPinkLine ? Math.max(2, (DBL_HEADER_H / 2) - (topicFontSize / 2) - 4) : Math.max(0, PAPER_PAD_TOP - topicFontSize - 2);
+        const leftPx = isDouble ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
+        return (
+          <div style={{
+            position: 'absolute',
+            top: topPx,
+            left: topicPosition === 'left' ? leftPx : 0,
+            right: topicPosition === 'right' ? PAPER_PAD_RIGHT : 0,
+            textAlign: topicPosition,
+            fontFamily: `'${font}', cursive`,
+            fontSize: topicFontSize,
+            color: topicColor || defaultColor,
+            zIndex: 3,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            maxWidth: A4_WIDTH_PX - (topicPosition === 'left' ? leftPx + PAPER_PAD_RIGHT : topicPosition === 'right' ? leftPx + PAPER_PAD_RIGHT : 0),
+          }}>
+            {topic}
+          </div>
+        );
+      })()}
+
 
       {/* ── Page Header: exact reference design with handwriting font ── */}
       {showHeader && (
@@ -775,6 +838,10 @@ Gravity of Sun keeps all planets in orbit.`;
   const [pageDate, setPageDate] = useState('');
   const [showHeader, setShowHeader] = useState(true);
   const [textAlign, setTextAlign] = useState<'left'|'center'|'right'>('left');
+  const [topic, setTopic] = useState('');
+  const [topicColor, setTopicColor] = useState<LineColor>('#1e293b');
+  const [topicFontSize, setTopicFontSize] = useState(20);
+  const [topicPosition, setTopicPosition] = useState<'left'|'center'|'right'>('left');
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -947,6 +1014,10 @@ Gravity of Sun keeps all planets in orbit.`;
           totalPages: pages.length,
           showHeader,
           textAlign,
+          topic,
+          topicColor,
+          topicFontSize,
+          topicPosition,
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -968,7 +1039,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicPosition]);
 
   const exportPDF = useCallback(async () => {
     const container = previewContainerRef.current;
@@ -1000,6 +1071,10 @@ Gravity of Sun keeps all planets in orbit.`;
             totalPages: pages.length,
             showHeader,
             textAlign,
+            topic,
+            topicColor,
+            topicFontSize,
+            topicPosition,
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1020,7 +1095,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicPosition]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1257,6 +1332,84 @@ Gravity of Sun keeps all planets in orbit.`;
             )}
           </div>
 
+          {/* Topic — sits on the pink line (or top of first line if no header) */}
+          <div className="rounded-[1.5rem] border border-white/75 bg-white/82 p-4 shadow-xl shadow-slate-950/5 backdrop-blur-2xl ring-1 ring-slate-950/[0.02]">
+            <h2 className="font-black tracking-tight text-slate-950 text-sm flex items-center gap-2 mb-1">
+              <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_0_4px_rgba(244,63,94,0.14)]" /> Topic
+            </h2>
+            <p className="text-xs text-slate-400 mb-3">
+              {showHeader || paperType === 'double'
+                ? 'Shown on the pink line at the top of every page'
+                : 'Shown at the top of the first line of every page'}
+            </p>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Topic Text</label>
+                <input
+                  type="text"
+                  value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  placeholder="e.g. The Solar System"
+                  className="w-full border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm text-slate-800 bg-white/90 shadow-sm focus:outline-none focus:ring-4 focus:ring-rose-500/15 focus:border-rose-400"
+                />
+              </div>
+
+              {topic.trim() && (
+                <>
+                  {/* Topic Colour */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Topic Colour</label>
+                    <div className="flex flex-wrap gap-3">
+                      {allColors.map(c => (
+                        <button
+                          key={c.hex}
+                          onClick={() => setTopicColor(c.hex as LineColor)}
+                          title={c.label}
+                          style={{
+                            backgroundColor: c.hex,
+                            boxShadow: topicColor === c.hex ? `0 0 0 3px white, 0 0 0 5px ${c.hex}` : '0 1px 3px rgba(0,0,0,0.2)',
+                          }}
+                          className="w-8 h-8 rounded-full transition-all hover:scale-110 active:scale-95"
+                        />
+                      ))}
+                    </div>
+                    <div style={{ fontFamily: `'${font}', cursive`, fontSize: topicFontSize, color: topicColor }}
+                      className="mt-2 truncate pl-1 bg-rose-50/80 rounded-xl px-3 py-1.5">
+                      {topic} <span className="text-slate-400 text-xs font-sans">preview</span>
+                    </div>
+                  </div>
+
+                  {/* Topic Position */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Topic Position</label>
+                    <div className="flex gap-2">
+                      {(['left','center','right'] as const).map(p => (
+                        <button key={p} onClick={() => setTopicPosition(p)}
+                          className={`flex-1 py-2 rounded-xl border text-sm font-bold transition-all capitalize
+                            ${topicPosition === p ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300'}`}>
+                          {p}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Topic Size */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
+                      <span>Topic Size</span>
+                      <span className="text-rose-600 font-bold">{topicFontSize}px</span>
+                    </label>
+                    <input type="range" min={12} max={48} step={1} value={topicFontSize}
+                      onChange={e => setTopicFontSize(Number(e.target.value))}
+                      className="w-full accent-rose-500 h-1.5 rounded-full" />
+                    <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>12</span><span>48px</span></div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Paper Type */}
           <div className="rounded-[1.5rem] border border-white/75 bg-white/82 p-4 shadow-xl shadow-slate-950/5 backdrop-blur-2xl ring-1 ring-slate-950/[0.02]">
             <h2 className="font-black tracking-tight text-slate-950 text-sm flex items-center gap-2 mb-3">
@@ -1378,6 +1531,10 @@ Gravity of Sun keeps all planets in orbit.`;
                   onDateChange={pageIdx === 0 ? setPageDate : undefined}
                   showHeader={showHeader}
                   textAlign={textAlign}
+                  topic={topic}
+                  topicColor={topicColor}
+                  topicFontSize={topicFontSize}
+                  topicPosition={topicPosition}
                 />
               </div>
             ))}
