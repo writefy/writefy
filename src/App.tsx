@@ -17,7 +17,7 @@ const MIN_LINE_HEIGHT_PX = 40;
 
 // Paper interior padding
 const PAPER_PAD_LEFT = 60;   // px left margin of text area (before user's margin)
-const PAPER_PAD_RIGHT = 10;  // px right margin (kept small/near-zero to match live preview)
+const PAPER_PAD_RIGHT = 4;   // px right margin (kept minimal to match live preview)
 const PAPER_PAD_TOP = 28;    // px before first ruled line
 const PAPER_PAD_BOTTOM = 32; // px at bottom
 
@@ -353,17 +353,13 @@ function renderHandwritingCanvas(
             const ch = chunk.text[i];
             const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.4;     // ±1.2px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.07;  // ±~2° tilt
-            const inkAlpha = 0.82 + prand(seed * 7 + 3) * 0.18; // 0.82–1.0 pressure variation
-            const strokeW = prand(seed * 7 + 5) * 0.9;          // 0–0.9px extra weight on some strokes
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
+            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
             ctx.save();
             ctx.translate(x, y + jY);
             ctx.rotate(jRot);
-            // Indentation shadow — mimics the groove pressed into the paper
-            ctx.globalAlpha = 0.10;
-            ctx.fillStyle = '#000000';
-            ctx.fillText(ch, 0.7, 0.9);
             // Ink — fill + variable-width stroke so some strokes look heavier
             // (simulates downstroke pressure vs. light upstrokes)
             ctx.globalAlpha = inkAlpha;
@@ -641,20 +637,6 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
               let prevOffset = 0;
               return (
                 <g key={idx}>
-                  {/* Indentation shadow — mimics the groove pressed into the paper */}
-                  <text
-                    x={tx} y={y} dx="0.7" dy="0.9"
-                    fontFamily={`'${font}', cursive`}
-                    fontSize={fontSize}
-                    dominantBaseline="alphabetic"
-                    textAnchor={anchor}
-                    fill="#000000"
-                    fillOpacity={0.1}
-                    xmlSpace="preserve"
-                    style={wsStyle}
-                  >
-                    {lineChunks.map(c => c.text).join('')}
-                  </text>
                   {/* Ink — drawn character-by-character with deterministic micro-jitter */}
                   <text
                     x={tx} y={y}
@@ -669,9 +651,9 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
                       Array.from(chunk.text).map((ch, k) => {
                         const seed = idx * 5000 + charIdx;
                         charIdx++;
-                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.4;  // ±1.2px
-                        const opacity = 0.82 + prand(seed * 7 + 3) * 0.18; // 0.82–1.0
-                        const strokeW = prand(seed * 7 + 5) * 0.9;          // 0–0.9px extra weight
+                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;  // ±1.3px
+                        const opacity = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0
+                        const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight
                         const dy = offset - prevOffset;
                         prevOffset = offset;
                         return (
