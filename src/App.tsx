@@ -134,7 +134,8 @@ function renderHandwritingCanvas(
     topic?: string;
     topicColor?: LineColor;
     topicFontSize?: number;
-    topicPosition?: 'left' | 'center' | 'right';
+    topicOffsetX?: number;
+    topicOffsetY?: number;
   }
 ) {
   const scale = options.scale ?? 2;
@@ -226,26 +227,22 @@ function renderHandwritingCanvas(
   }
 
   // ── Topic label (independent of header — sits on the pink line, or at the
-  //     top of the first ruled line when no header) ────────────────────────
+  //     top of the first ruled line when no header). Freely positionable
+  //     via topicOffsetX (horizontal px from left edge) and topicOffsetY
+  //     (vertical px added to the default baseline). ─────────────────────
   if (options.topic && options.topic.trim()) {
     ctx.save();
     const hasPinkLine = options.showHeader || options.paperType === 'double';
-    const topicBaselineY = hasPinkLine ? 34 : (PAPER_PAD_TOP - 6);
+    const baseBaselineY = hasPinkLine ? DBL_HEADER_H - 8 : (PAPER_PAD_TOP - 6);
     const tColor = options.topicColor || options.defaultColor;
     const tSize = options.topicFontSize ?? 20;
     ctx.fillStyle = tColor;
     ctx.font = `${tSize}px "${options.font}", cursive`;
-    const pos = options.topicPosition || 'left';
-    ctx.textAlign = pos === 'center' ? 'center' : pos === 'right' ? 'right' : 'left';
-    let tx: number;
-    if (pos === 'left') {
-      tx = options.paperType === 'double' ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
-    } else if (pos === 'center') {
-      tx = A4_WIDTH_PX / 2;
-    } else {
-      tx = A4_WIDTH_PX - PAPER_PAD_RIGHT;
-    }
-    ctx.fillText(options.topic, tx, topicBaselineY);
+    ctx.textAlign = 'left';
+    const baseX = options.paperType === 'double' ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
+    const tx = baseX + (options.topicOffsetX ?? 0);
+    const ty = baseBaselineY + (options.topicOffsetY ?? 0);
+    ctx.fillText(options.topic, tx, ty);
     ctx.restore();
   }
 
@@ -635,14 +632,16 @@ interface PageProps {
   topic?: string;
   topicColor?: LineColor;
   topicFontSize?: number;
-  topicPosition?: 'left'|'center'|'right';
+  topicOffsetX?: number;
+  topicOffsetY?: number;
 }
 
 const A4Page: React.FC<PageProps> = ({
   pageLines, font, fontSize, marginLeft, lineHeight, paperType,
   pageNumber, totalPages, showEmpty, defaultColor, wordSpacing = 0,
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
-  topic = '', topicColor, topicFontSize = 20, topicPosition = 'left',
+  topic = '', topicColor, topicFontSize = 20,
+  topicOffsetX = 0, topicOffsetY = 0,
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -667,19 +666,18 @@ const A4Page: React.FC<PageProps> = ({
       <PaperBg type={paperType} marginLeftPx={textAreaLeft} lineHeight={lineHeight} showHeader={showHeader} />
 
       {/* ── Topic label: sits on the pink line (header present), or at the
-            top of the first ruled line (no header). Freely positionable
-            left/center/right; locked in place so it never shifts with text. */}
+            top of the first ruled line (no header). Freely movable via
+            topicOffsetX/topicOffsetY — locked in place so it never shifts
+            with text content. */}
       {topic && topic.trim() && (() => {
         const hasPinkLine = showHeader || isDouble;
-        const topPx = hasPinkLine ? Math.max(2, (DBL_HEADER_H / 2) - (topicFontSize / 2) - 4) : Math.max(0, PAPER_PAD_TOP - topicFontSize - 2);
-        const leftPx = isDouble ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
+        const baseTop = hasPinkLine ? Math.max(2, DBL_HEADER_H - topicFontSize - 8) : Math.max(0, PAPER_PAD_TOP - topicFontSize - 2);
+        const baseLeft = isDouble ? DBL_MARGIN2 + 10 : PAPER_PAD_LEFT;
         return (
           <div style={{
             position: 'absolute',
-            top: topPx,
-            left: topicPosition === 'left' ? leftPx : 0,
-            right: topicPosition === 'right' ? PAPER_PAD_RIGHT : 0,
-            textAlign: topicPosition,
+            top: baseTop + topicOffsetY,
+            left: baseLeft + topicOffsetX,
             fontFamily: `'${font}', cursive`,
             fontSize: topicFontSize,
             color: topicColor || defaultColor,
@@ -688,7 +686,7 @@ const A4Page: React.FC<PageProps> = ({
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            maxWidth: A4_WIDTH_PX - (topicPosition === 'left' ? leftPx + PAPER_PAD_RIGHT : topicPosition === 'right' ? leftPx + PAPER_PAD_RIGHT : 0),
+            maxWidth: A4_WIDTH_PX - (baseLeft + topicOffsetX) - PAPER_PAD_RIGHT,
           }}>
             {topic}
           </div>
@@ -841,7 +839,8 @@ Gravity of Sun keeps all planets in orbit.`;
   const [topic, setTopic] = useState('');
   const [topicColor, setTopicColor] = useState<LineColor>('#1e293b');
   const [topicFontSize, setTopicFontSize] = useState(20);
-  const [topicPosition, setTopicPosition] = useState<'left'|'center'|'right'>('left');
+  const [topicOffsetX, setTopicOffsetX] = useState(0);
+  const [topicOffsetY, setTopicOffsetY] = useState(0);
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -1017,7 +1016,8 @@ Gravity of Sun keeps all planets in orbit.`;
           topic,
           topicColor,
           topicFontSize,
-          topicPosition,
+          topicOffsetX,
+          topicOffsetY,
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -1039,7 +1039,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicPosition]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY]);
 
   const exportPDF = useCallback(async () => {
     const container = previewContainerRef.current;
@@ -1074,7 +1074,8 @@ Gravity of Sun keeps all planets in orbit.`;
             topic,
             topicColor,
             topicFontSize,
-            topicPosition,
+            topicOffsetX,
+            topicOffsetY,
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1095,7 +1096,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicPosition]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1380,18 +1381,27 @@ Gravity of Sun keeps all planets in orbit.`;
                     </div>
                   </div>
 
-                  {/* Topic Position */}
+                  {/* Topic Free Position */}
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Topic Position</label>
-                    <div className="flex gap-2">
-                      {(['left','center','right'] as const).map(p => (
-                        <button key={p} onClick={() => setTopicPosition(p)}
-                          className={`flex-1 py-2 rounded-xl border text-sm font-bold transition-all capitalize
-                            ${topicPosition === p ? 'bg-rose-500 text-white border-rose-500' : 'bg-white text-slate-600 border-slate-200 hover:border-rose-300'}`}>
-                          {p}
-                        </button>
-                      ))}
-                    </div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
+                      <span>Horizontal Position</span>
+                      <span className="text-rose-600 font-bold">{topicOffsetX}px</span>
+                    </label>
+                    <input type="range" min={-50} max={550} step={1} value={topicOffsetX}
+                      onChange={e => setTopicOffsetX(Number(e.target.value))}
+                      className="w-full accent-rose-500 h-1.5 rounded-full" />
+                    <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>← left</span><span>right →</span></div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
+                      <span>Vertical Position</span>
+                      <span className="text-rose-600 font-bold">{topicOffsetY}px</span>
+                    </label>
+                    <input type="range" min={-40} max={60} step={1} value={topicOffsetY}
+                      onChange={e => setTopicOffsetY(Number(e.target.value))}
+                      className="w-full accent-rose-500 h-1.5 rounded-full" />
+                    <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>↑ up</span><span>down ↓</span></div>
                   </div>
 
                   {/* Topic Size */}
@@ -1534,7 +1544,8 @@ Gravity of Sun keeps all planets in orbit.`;
                   topic={topic}
                   topicColor={topicColor}
                   topicFontSize={topicFontSize}
-                  topicPosition={topicPosition}
+                  topicOffsetX={topicOffsetX}
+                  topicOffsetY={topicOffsetY}
                 />
               </div>
             ))}
