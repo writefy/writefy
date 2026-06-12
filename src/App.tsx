@@ -319,11 +319,43 @@ function renderHandwritingCanvas(
     pageLines.forEach((lineChunks, lineIndex) => {
       let x = dblX;
       const y = dblFirstY + lineIndex * options.lineHeight;
-      lineChunks.forEach(chunk => {
-        ctx.fillStyle = chunk.color;
-        ctx.fillText(chunk.text, x, y);
-        x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
-      });
+      if (options.pressureEffect) {
+        let charIdx = 0;
+        lineChunks.forEach(chunk => {
+          for (let i = 0; i < chunk.text.length; i++) {
+            const ch = chunk.text[i];
+            const w = ctx.measureText(ch).width;
+            const seed = lineIndex * 5000 + charIdx;
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
+            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
+            ctx.save();
+            ctx.translate(x, y + jY);
+            ctx.rotate(jRot);
+            ctx.globalAlpha = inkAlpha;
+            ctx.fillStyle = chunk.color;
+            ctx.fillText(ch, 0, 0);
+            if (strokeW > 0.2) {
+              ctx.lineWidth = strokeW;
+              ctx.lineJoin = 'round';
+              ctx.strokeStyle = chunk.color;
+              ctx.globalAlpha = inkAlpha * 0.85;
+              ctx.strokeText(ch, 0, 0);
+            }
+            ctx.restore();
+            x += w;
+            charIdx++;
+          }
+          x += (options.wordSpacing ?? 0);
+        });
+      } else {
+        lineChunks.forEach(chunk => {
+          ctx.fillStyle = chunk.color;
+          ctx.fillText(chunk.text, x, y);
+          x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
+        });
+      }
     });
     ctx.restore();
     return canvas;
