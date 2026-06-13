@@ -961,13 +961,13 @@ Gravity of Sun keeps all planets in orbit.`;
   const [wordSpacing, setWordSpacing] = useState(0);
   const [pageDate, setPageDate] = useState('');
   const [showHeader, setShowHeader] = useState(true);
-  const [textAlign, setTextAlign] = useState<'left'|'center'|'right'>('left');
+  const textAlign: 'left'|'center'|'right' = 'left';
   const [topic, setTopic] = useState('');
   const [topicColor, setTopicColor] = useState<LineColor>('#1e293b');
   const [topicFontSize, setTopicFontSize] = useState(20);
   const [topicOffsetX, setTopicOffsetX] = useState(0);
   const [topicOffsetY, setTopicOffsetY] = useState(0);
-  const [pressureEffect, setPressureEffect] = useState(true);
+  const [pressureEffect, setPressureEffect] = useState(false);
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -1235,24 +1235,24 @@ Gravity of Sun keeps all planets in orbit.`;
       {/* HEADER */}
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl">
         <div className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-3.5 flex items-center justify-between gap-2">
-          <Link to="/" className="flex items-center gap-2.5 min-w-0">
+          <Link to="/" className="flex items-center gap-2.5 min-w-0 flex-shrink-0">
             <div className="h-10 w-10 sm:h-11 sm:w-11 rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-700 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/25 ring-1 ring-white/60 flex-shrink-0">
               <svg className="h-4 w-4 sm:h-5 sm:w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
             </div>
             <div className="min-w-0">
-              <div className="text-sm sm:text-base font-black tracking-tight text-slate-950 leading-tight truncate">Writeify</div>
+              <div className="text-sm sm:text-base font-black tracking-tight text-slate-950 leading-tight whitespace-nowrap">Writeify</div>
               <div className="text-xs text-slate-500 hidden sm:block">Premium multi-colour handwriting studio</div>
             </div>
           </Link>
-          <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-xs sm:text-sm text-slate-600 shadow-sm flex-shrink-0">
-            <Link to="/" className="rounded-full px-3 py-1.5 font-semibold text-slate-950 hover:bg-slate-100">Home</Link>
-            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Tools</Link>
-            <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">FAQ</Link>
-            <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Privacy</Link>
-            <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Terms</Link>
-            <Link to="/contact" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Contact</Link>
+          <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-xs sm:text-sm text-slate-600 shadow-sm flex-shrink-0 max-w-full overflow-x-auto scrollbar-hide flex-nowrap">
+            <Link to="/" className="rounded-full px-3 py-1.5 font-semibold text-slate-950 hover:bg-slate-100 whitespace-nowrap flex-shrink-0">Home</Link>
+            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Tools</Link>
+            <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">FAQ</Link>
+            <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Privacy</Link>
+            <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Terms</Link>
+            <Link to="/contact" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Contact</Link>
           </nav>
         </div>
       </header>
@@ -1337,7 +1337,7 @@ Gravity of Sun keeps all planets in orbit.`;
               <span className="h-2 w-2 rounded-full bg-purple-500 shadow-[0_0_0_4px_rgba(168,85,247,0.14)]" /> Default Ink Colour
             </h2>
             <p className="text-xs text-slate-400 mb-3">Colour for any text that hasn't been highlighted with a specific colour</p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 -mx-1 px-1">
               {allColors.map(c => (
                 <button
                   key={c.hex}
@@ -1347,7 +1347,7 @@ Gravity of Sun keeps all planets in orbit.`;
                     backgroundColor: c.hex,
                     boxShadow: defaultColor === c.hex ? `0 0 0 3px white, 0 0 0 5px ${c.hex}` : '0 1px 3px rgba(0,0,0,0.2)',
                   }}
-                  className="w-8 h-8 rounded-full transition-all hover:scale-110 active:scale-95"
+                  className="w-7 h-7 shrink-0 rounded-full transition-all hover:scale-110 active:scale-95"
                 />
               ))}
             </div>
@@ -1372,38 +1372,40 @@ Gravity of Sun keeps all planets in orbit.`;
               </div>
 
 
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
-                  <span>Font Size</span>
-                  <span className="text-indigo-600 font-bold">{fontSize}px</span>
-                </label>
-                <input type="range" min={14} max={36} step={1} value={fontSize}
-                  onChange={e => setFontSize(Number(e.target.value))}
-                  className="w-full accent-indigo-500 h-1.5 rounded-full" />
-                <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>14</span><span>36</span></div>
-              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex flex-col mb-1">
+                    <span>Font Size</span>
+                    <span className="text-indigo-600 font-bold text-sm">{fontSize}px</span>
+                  </label>
+                  <input type="range" min={14} max={36} step={1} value={fontSize}
+                    onChange={e => setFontSize(Number(e.target.value))}
+                    className="w-full accent-indigo-500 h-1.5 rounded-full" />
+                  <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>14</span><span>36</span></div>
+                </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
-                  <span>Left Margin</span>
-                  <span className="text-indigo-600 font-bold">{marginLeft}px</span>
-                </label>
-                <input type="range" min={0} max={120} step={4} value={marginLeft}
-                  onChange={e => setMarginLeft(Number(e.target.value))}
-                  className="w-full accent-indigo-500 h-1.5 rounded-full" />
-                <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>0</span><span>120px</span></div>
-              </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex flex-col mb-1">
+                    <span>Left Margin</span>
+                    <span className="text-indigo-600 font-bold text-sm">{marginLeft}px</span>
+                  </label>
+                  <input type="range" min={0} max={120} step={4} value={marginLeft}
+                    onChange={e => setMarginLeft(Number(e.target.value))}
+                    className="w-full accent-indigo-500 h-1.5 rounded-full" />
+                  <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>0</span><span>120</span></div>
+                </div>
 
-              {/* Word Spacing slider */}
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex justify-between mb-1">
-                  <span>Word Spacing</span>
-                  <span className="text-indigo-600 font-bold">{wordSpacing}px</span>
-                </label>
-                <input type="range" min={0} max={20} step={1} value={wordSpacing}
-                  onChange={e => setWordSpacing(Number(e.target.value))}
-                  className="w-full accent-indigo-500 h-1.5 rounded-full" />
-                <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>0</span><span>20px</span></div>
+                {/* Word Spacing slider */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex flex-col mb-1">
+                    <span>Word Spacing</span>
+                    <span className="text-indigo-600 font-bold text-sm">{wordSpacing}px</span>
+                  </label>
+                  <input type="range" min={0} max={20} step={1} value={wordSpacing}
+                    onChange={e => setWordSpacing(Number(e.target.value))}
+                    className="w-full accent-indigo-500 h-1.5 rounded-full" />
+                  <div className="flex justify-between text-xs text-slate-400 mt-0.5"><span>0</span><span>20</span></div>
+                </div>
               </div>
 
               {/* Pen Pressure / Realistic Handwriting toggle */}
@@ -1418,21 +1420,6 @@ Gravity of Sun keeps all planets in orbit.`;
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${pressureEffect ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-2">Text Alignment</label>
-                <div className="flex gap-2">
-                  {(['left','center','right'] as const).map(a => (
-                    <button key={a} onClick={() => setTextAlign(a)}
-                      className={`flex-1 py-2 rounded-xl border text-sm font-bold transition-all flex items-center justify-center gap-1.5
-                        ${textAlign === a ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'}`}>
-                      {a === 'left' && <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="3" width="10" height="1.5" rx="0.75"/><rect x="1" y="6.5" width="14" height="1.5" rx="0.75"/><rect x="1" y="10" width="8" height="1.5" rx="0.75"/><rect x="1" y="13.5" width="12" height="1.5" rx="0.75"/></svg>}
-                      {a === 'center' && <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="1.5" rx="0.75"/><rect x="1" y="6.5" width="14" height="1.5" rx="0.75"/><rect x="4" y="10" width="8" height="1.5" rx="0.75"/><rect x="2" y="13.5" width="12" height="1.5" rx="0.75"/></svg>}
-                      {a === 'right' && <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor"><rect x="5" y="3" width="10" height="1.5" rx="0.75"/><rect x="1" y="6.5" width="14" height="1.5" rx="0.75"/><rect x="7" y="10" width="8" height="1.5" rx="0.75"/><rect x="3" y="13.5" width="12" height="1.5" rx="0.75"/></svg>}
-                      <span className="capitalize text-xs">{a}</span>
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
@@ -1921,21 +1908,21 @@ function PageLayout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.2),transparent_32rem),linear-gradient(135deg,#f8fafc_0%,#eef2ff_50%,#f8fafc_100%)]">
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl">
         <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
             <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-700 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/25 ring-1 ring-white/60">
               <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
             </div>
-            <span className="font-black tracking-tight text-slate-950 text-sm sm:text-base">Writeify</span>
+            <span className="font-black tracking-tight text-slate-950 text-sm sm:text-base whitespace-nowrap">Writeify</span>
           </Link>
-          <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm text-slate-600 shadow-sm">
-            <Link to="/" className="rounded-full px-3 py-1.5 font-semibold hover:bg-slate-100 hover:text-slate-950">Home</Link>
-            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Tools</Link>
-            <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">FAQ</Link>
-            <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Privacy</Link>
-            <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950">Terms</Link>
-            <Link to="/contact" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Contact</Link>
+          <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm text-slate-600 shadow-sm flex-shrink-0 max-w-[60%] overflow-x-auto scrollbar-hide flex-nowrap">
+            <Link to="/" className="rounded-full px-3 py-1.5 font-semibold hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Home</Link>
+            <Link to="/tools" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Tools</Link>
+            <Link to="/faq" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">FAQ</Link>
+            <Link to="/privacy" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Privacy</Link>
+            <Link to="/terms" className="rounded-full px-3 py-1.5 hidden sm:inline hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Terms</Link>
+            <Link to="/contact" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950 whitespace-nowrap flex-shrink-0">Contact</Link>
           </nav>
         </div>
       </header>
@@ -3474,13 +3461,13 @@ function InvoiceMakerPage() {
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl print:hidden">
         <div className="max-w-screen-xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center gap-2.5">
+          <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
             <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-slate-950 via-indigo-700 to-purple-600 flex items-center justify-center shadow-xl shadow-indigo-500/25 ring-1 ring-white/60">
               <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
             </div>
-            <span className="font-black tracking-tight text-slate-950 text-sm sm:text-base">Writeify</span>
+            <span className="font-black tracking-tight text-slate-950 text-sm sm:text-base whitespace-nowrap">Writeify</span>
           </Link>
           <nav className="flex items-center gap-1 rounded-full border border-slate-200/80 bg-white/80 p-1 text-sm text-slate-600 shadow-sm">
             <Link to="/" className="rounded-full px-3 py-1.5 hover:bg-slate-100 hover:text-slate-950">Home</Link>
