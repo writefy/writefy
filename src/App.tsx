@@ -121,6 +121,28 @@ async function waitForFonts() {
   }
 }
 
+// Mimics the soft vignette / photographed-paper shadow look (darker edges,
+// gentle diagonal shading) seen in scanned handwriting images.
+function applyPaperShadow(ctx: CanvasRenderingContext2D, scale: number) {
+  const w = A4_WIDTH_PX * scale;
+  const h = A4_HEIGHT_PX * scale;
+  ctx.save();
+  // Soft vignette darkening towards the edges/corners
+  const radial = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.25, w / 2, h / 2, Math.max(w, h) * 0.75);
+  radial.addColorStop(0, 'rgba(0,0,0,0)');
+  radial.addColorStop(1, 'rgba(0,0,0,0.32)');
+  ctx.fillStyle = radial;
+  ctx.fillRect(0, 0, w, h);
+  // Gentle diagonal shading for a photographed-paper feel
+  const diag = ctx.createLinearGradient(0, 0, w, h);
+  diag.addColorStop(0, 'rgba(0,0,0,0.10)');
+  diag.addColorStop(0.5, 'rgba(0,0,0,0)');
+  diag.addColorStop(1, 'rgba(0,0,0,0.14)');
+  ctx.fillStyle = diag;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+}
+
 function renderHandwritingCanvas(
   pageLines: Chunk[][],
   options: {
@@ -144,6 +166,7 @@ function renderHandwritingCanvas(
     topicOffsetX?: number;
     topicOffsetY?: number;
     pressureEffect?: boolean;
+    paperShadow?: boolean;
   }
 ) {
   const scale = options.scale ?? 2;
@@ -358,6 +381,7 @@ function renderHandwritingCanvas(
       }
     });
     ctx.restore();
+    if (options.paperShadow) applyPaperShadow(ctx, scale);
     return canvas;
   }
 
@@ -420,6 +444,7 @@ function renderHandwritingCanvas(
     });
   }
   ctx.restore();
+  if (options.paperShadow) applyPaperShadow(ctx, scale);
 
   return canvas;
 }
@@ -759,6 +784,7 @@ interface PageProps {
   topicOffsetX?: number;
   topicOffsetY?: number;
   pressureEffect?: boolean;
+  paperShadow?: boolean;
 }
 
 const A4Page: React.FC<PageProps> = ({
@@ -766,7 +792,7 @@ const A4Page: React.FC<PageProps> = ({
   pageNumber, totalPages, showEmpty, defaultColor, wordSpacing = 0,
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
   topic = '', topicColor, topicFontSize = 20,
-  topicOffsetX = 0, topicOffsetY = 0, pressureEffect = false,
+  topicOffsetX = 0, topicOffsetY = 0, pressureEffect = false, paperShadow = false,
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -931,6 +957,20 @@ const A4Page: React.FC<PageProps> = ({
           {pageNumber} / {totalPages}
         </div>
       )}
+
+      {/* ── Paper Shadow: soft vignette + diagonal shading, mimics a photographed page ── */}
+      {paperShadow && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 4,
+          background: `
+            linear-gradient(135deg, rgba(0,0,0,0.10) 0%, rgba(0,0,0,0) 50%, rgba(0,0,0,0.14) 100%),
+            radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.32) 100%)
+          `,
+        }} />
+      )}
     </div>
   );
 };
@@ -968,6 +1008,7 @@ Gravity of Sun keeps all planets in orbit.`;
   const [topicOffsetX, setTopicOffsetX] = useState(0);
   const [topicOffsetY, setTopicOffsetY] = useState(0);
   const [pressureEffect, setPressureEffect] = useState(false);
+  const [paperShadow, setPaperShadow] = useState(false);
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -1146,6 +1187,7 @@ Gravity of Sun keeps all planets in orbit.`;
           topicOffsetX,
           topicOffsetY,
           pressureEffect,
+          paperShadow,
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -1167,7 +1209,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow]);
 
   const exportPDF = useCallback(async () => {
     const container = previewContainerRef.current;
@@ -1205,6 +1247,7 @@ Gravity of Sun keeps all planets in orbit.`;
             topicOffsetX,
             topicOffsetY,
             pressureEffect,
+            paperShadow,
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1225,7 +1268,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1409,7 +1452,7 @@ Gravity of Sun keeps all planets in orbit.`;
               </div>
 
               {/* Pen Pressure / Realistic Handwriting toggle */}
-              <div className="flex items-center justify-between bg-slate-50 rounded-2xl px-3 py-2.5">
+              <div className="flex items-center justify-between bg-slate-50 rounded-2xl px-3 py-2.5 mb-3">
                 <div>
                   <p className="text-xs font-bold text-slate-700">Realistic Pen Pressure</p>
                   <p className="text-[11px] text-slate-400 mt-0.5">Adds natural ink &amp; paper-press texture</p>
@@ -1419,6 +1462,20 @@ Gravity of Sun keeps all planets in orbit.`;
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${pressureEffect ? 'bg-indigo-500' : 'bg-slate-200'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${pressureEffect ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+
+              {/* Paper Shadow / Photographed-paper vignette toggle */}
+              <div className="flex items-center justify-between bg-slate-50 rounded-2xl px-3 py-2.5">
+                <div>
+                  <p className="text-xs font-bold text-slate-700">Paper Shadow</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Adds a soft photographed-page vignette &amp; shading</p>
+                </div>
+                <button
+                  onClick={() => setPaperShadow(p => !p)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${paperShadow ? 'bg-indigo-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${paperShadow ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>
@@ -1676,6 +1733,7 @@ Gravity of Sun keeps all planets in orbit.`;
                   topicOffsetX={topicOffsetX}
                   topicOffsetY={topicOffsetY}
                   pressureEffect={pressureEffect}
+                  paperShadow={paperShadow}
                 />
               </div>
             ))}
