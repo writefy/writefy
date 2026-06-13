@@ -1889,7 +1889,9 @@ function AppFooter() {
     <footer className="mt-10 border-t border-white/70 bg-white/65 py-8 shadow-[0_-10px_30px_rgba(15,23,42,0.04)] backdrop-blur-2xl">
       <div className="max-w-screen-xl mx-auto px-4 text-center text-sm text-slate-500">
         <p className="font-black tracking-tight text-slate-950 mb-1">Writeify</p>
-        <p className="mb-3 text-xs">© {new Date().getFullYear()} All rights reserved · Mujeeb Wani</p>
+        <p className="mb-3 text-xs">
+          © {new Date().getFullYear()} All rights reserved · <a href="https://www.instagram.com/themujeebwani" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-indigo-600 transition-colors underline">Mujeeb Wani</a> &amp; <a href="https://www.instagram.com/mhrohan_99" target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-indigo-600 transition-colors underline">Mh Rohan</a>
+        </p>
         <div className="flex justify-center gap-4 flex-wrap text-xs">
           <Link to="/" className="font-semibold hover:text-indigo-600 transition-colors">Home</Link>
           <Link to="/privacy" className="font-semibold hover:text-indigo-600 transition-colors">Privacy Policy</Link>
