@@ -14,6 +14,12 @@ export interface FontInfo {
   format?: 'truetype' | 'opentype' | 'woff' | 'woff2';
 }
 
+export interface CouponInfo {
+  code: string;       // e.g. "STUDENT50"
+  discount: number;   // percentage 10–100
+  active: boolean;
+}
+
 export interface AdminSettings {
   password: string;
   publisherId: string;
@@ -28,4 +34,7 @@ export interface AdminSettings {
   supportEmail: string;
   adsEnabled: boolean;
   siteDomain: string;
+  exportPrice: number;   // ₹ price for export; 0 = free
+  coupons: CouponInfo[]; // discount coupons
+  razorpayKeyId: string; // Razorpay key_id (live)
 }
