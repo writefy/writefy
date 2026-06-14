@@ -115,6 +115,153 @@ function ExportAnimation({ type, pageCount = 1 }: { type: 'png' | 'pdf' | false;
   );
 }
 
+// ─── RAZORPAY LOADER ─────────────────────────────────────────────────────────
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise(resolve => {
+    if ((window as any).Razorpay) { resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
+}
+
+// ─── PAYMENT MODAL ────────────────────────────────────────────────────────────
+interface PaymentModalProps {
+  exportType: 'png' | 'pdf';
+  basePrice: number;
+  coupons: import('./types').CouponInfo[];
+  razorpayKeyId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+function PaymentModal({ exportType, basePrice, coupons, razorpayKeyId, onSuccess, onClose }: PaymentModalProps) {
+  const [couponInput, setCouponInput] = React.useState('');
+  const [appliedCoupon, setAppliedCoupon] = React.useState<import('./types').CouponInfo | null>(null);
+  const [couponMsg, setCouponMsg] = React.useState('');
+  const [paying, setPaying] = React.useState(false);
+
+  const discount = appliedCoupon ? appliedCoupon.discount : 0;
+  const finalPrice = Math.max(0, Math.round(basePrice * (1 - discount / 100)));
+  const isFree = finalPrice === 0;
+
+  const applyCoupon = () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) { setCouponMsg('Enter a coupon code.'); return; }
+    const found = coupons.find(c => c.code.toUpperCase() === code && c.active);
+    if (found) {
+      setAppliedCoupon(found);
+      setCouponMsg(`✅ "${found.code}" applied — ${found.discount}% off!`);
+    } else {
+      setAppliedCoupon(null);
+      setCouponMsg('❌ Invalid or expired coupon code.');
+    }
+  };
+
+  const handlePay = async () => {
+    if (isFree) { onSuccess(); return; }
+    setPaying(true);
+    const loaded = await loadRazorpayScript();
+    if (!loaded) { alert('Failed to load payment gateway. Please try again.'); setPaying(false); return; }
+    const options = {
+      key: razorpayKeyId,
+      amount: finalPrice * 100,
+      currency: 'INR',
+      name: 'Writeify',
+      description: `Export as ${exportType.toUpperCase()}`,
+      handler: function () { onSuccess(); },
+      notes: { export_type: exportType },
+      theme: { color: '#6366f1' },
+      modal: { ondismiss: () => { setPaying(false); } },
+    };
+    const rzp = new (window as any).Razorpay(options);
+    rzp.on('payment.failed', () => { setPaying(false); alert('Payment failed. Please try again.'); });
+    rzp.open();
+    setPaying(false);
+  };
+
+  const gradient = exportType === 'png' ? 'from-indigo-500 to-blue-500' : 'from-pink-500 to-purple-600';
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+      <div className="bg-white rounded-[2rem] shadow-2xl p-7 flex flex-col gap-5 w-full max-w-sm">
+        <div className="flex items-center justify-between">
+          <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
+            <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-white" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v13m0 0l-4-4m4 4l4-4" />
+            </svg>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div>
+          <p className="text-xl font-black text-slate-900">Export as {exportType.toUpperCase()}</p>
+          <p className="text-slate-500 text-sm mt-0.5">Pay once, download instantly</p>
+        </div>
+        <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Amount</p>
+            {discount > 0 && <p className="text-sm text-slate-400 line-through">₹{basePrice}</p>}
+            <p className="text-3xl font-black text-slate-900">{isFree ? 'FREE' : `₹${finalPrice}`}</p>
+          </div>
+          {discount > 0 && (
+            <div className="bg-green-100 text-green-700 font-black text-sm px-3 py-1.5 rounded-xl">{discount}% OFF</div>
+          )}
+        </div>
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Have a Coupon?</p>
+          <div className="flex gap-2">
+            <input
+              value={couponInput}
+              onChange={e => { setCouponInput(e.target.value); setCouponMsg(''); }}
+              onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+              placeholder="e.g. STUDENT50"
+              className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+            <button onClick={applyCoupon} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">
+              Apply
+            </button>
+          </div>
+          {couponMsg && (
+            <p className={`text-xs font-medium ${couponMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{couponMsg}</p>
+          )}
+        </div>
+        <button onClick={handlePay} disabled={paying}
+          className={`w-full py-3.5 rounded-2xl font-black text-sm text-white transition-all disabled:opacity-50 bg-gradient-to-r ${gradient} shadow-lg`}>
+          {paying ? '⏳ Opening payment…' : isFree ? '🎉 Download Free' : `Pay ₹${finalPrice} & Download`}
+        </button>
+        <p className="text-xs text-slate-400 text-center">Secured by Razorpay · UPI, Cards, Net Banking accepted</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── PAYMENT SUCCESS OVERLAY ──────────────────────────────────────────────────
+function PaymentSuccess({ onDone }: { onDone: () => void }) {
+  React.useEffect(() => {
+    const t = setTimeout(onDone, 2200);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
+      <div className="bg-white rounded-[2rem] shadow-2xl p-8 flex flex-col items-center gap-4 w-full max-w-xs text-center">
+        <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
+          <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 text-green-500" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <p className="text-2xl font-black text-slate-900">Payment Successful!</p>
+        <p className="text-slate-500 text-sm">Preparing your download…</p>
+      </div>
+    </div>
+  );
+}
+
 async function waitForFonts() {
   if ('fonts' in document) {
     await document.fonts.ready;
@@ -1013,6 +1160,11 @@ Gravity of Sun keeps all planets in orbit.`;
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
 
+  // ── Payment state ──────────────────────────────────────────────────────────
+  const [paymentModal, setPaymentModal] = useState<false | 'png' | 'pdf'>(false);
+  const [showPaymentSuccess, setShowPaymentSuccess] = useState(false);
+  const pendingExport = useRef<false | 'png' | 'pdf'>(false);
+
   // Load admin settings live from Supabase (so every visitor gets latest)
   const [adminSettings, setAdminSettings] = useState<import('./types').AdminSettings>(DEFAULT_ADMIN);
   useEffect(() => {
@@ -1274,6 +1426,32 @@ Gravity of Sun keeps all planets in orbit.`;
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.22),transparent_34rem),radial-gradient(circle_at_top_right,rgba(168,85,247,0.18),transparent_30rem),linear-gradient(135deg,#f8fafc_0%,#eef2ff_45%,#f8fafc_100%)] text-slate-900">
       <ExportAnimation type={downloading} pageCount={pages.length} />
+
+      {/* Payment modal */}
+      {paymentModal && (
+        <PaymentModal
+          exportType={paymentModal}
+          basePrice={adminSettings.exportPrice ?? 0}
+          coupons={adminSettings.coupons ?? []}
+          razorpayKeyId={adminSettings.razorpayKeyId ?? ''}
+          onSuccess={() => {
+            setPaymentModal(false);
+            setShowPaymentSuccess(true);
+          }}
+          onClose={() => { setPaymentModal(false); pendingExport.current = false; }}
+        />
+      )}
+
+      {/* Payment success overlay → then trigger actual export */}
+      {showPaymentSuccess && (
+        <PaymentSuccess onDone={() => {
+          setShowPaymentSuccess(false);
+          const type = pendingExport.current;
+          pendingExport.current = false;
+          if (type === 'png') exportPNG();
+          else if (type === 'pdf') exportPDF();
+        }} />
+      )}
 
       {/* HEADER */}
       <header className="sticky top-0 z-50 border-b border-white/60 bg-white/75 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-2xl">
@@ -1627,14 +1805,27 @@ Gravity of Sun keeps all planets in orbit.`;
             <h2 className="font-black tracking-tight text-white text-sm flex items-center gap-2 mb-3">
               <span className="h-2 w-2 rounded-full bg-indigo-400 shadow-[0_0_0_4px_rgba(129,140,248,0.18)]" /> Export
             </h2>
+            {adminSettings.exportPrice > 0 && (
+              <p className="text-xs text-indigo-300 mb-2 text-center">₹{adminSettings.exportPrice} per export · Coupons accepted</p>
+            )}
             <div className="flex gap-2.5">
-              <button onClick={exportPNG} disabled={!!downloading || !rawText.trim()}
+              <button onClick={() => {
+                if (!rawText.trim()) return;
+                if ((adminSettings.exportPrice ?? 0) <= 0) { exportPNG(); return; }
+                pendingExport.current = 'png';
+                setPaymentModal('png');
+              }} disabled={!!downloading || !rawText.trim()}
                 className="flex-1 py-3 rounded-2xl bg-white text-slate-950 hover:bg-indigo-50 font-black text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-lg shadow-black/20">
                 {downloading === 'png'
                   ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>PNG…</>
                   : <>PNG</>}
               </button>
-              <button onClick={exportPDF} disabled={!!downloading || !rawText.trim()}
+              <button onClick={() => {
+                if (!rawText.trim()) return;
+                if ((adminSettings.exportPrice ?? 0) <= 0) { exportPDF(); return; }
+                pendingExport.current = 'pdf';
+                setPaymentModal('pdf');
+              }} disabled={!!downloading || !rawText.trim()}
                 className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:from-indigo-400 hover:to-purple-400 font-black text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-950/30">
                 {downloading === 'pdf'
                   ? <><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/></svg>PDF…</>
@@ -2313,7 +2504,7 @@ function SupabaseTab({ settings, setSettings, save }: {
       <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
         <p className="text-xs font-bold text-slate-700 mb-2">📦 Everything that syncs:</p>
         <div className="grid grid-cols-2 gap-y-1 text-xs text-slate-500">
-          {['Publisher ID','Ad Slot 1/2/3','Ad Network Script','Ad Meta Tag','Site Name','Description','Keywords','OG Title','OG Description','Analytics ID','Custom Fonts','Custom Colors','Admin Password'].map(i => (
+          {['Publisher ID','Ad Slot 1/2/3','Ad Network Script','Ad Meta Tag','Site Name','Description','Keywords','OG Title','OG Description','Analytics ID','Custom Fonts','Custom Colors','Admin Password','Export Price','Razorpay Key','Coupons'].map(i => (
             <span key={i} className="flex items-center gap-1"><span className="text-green-500">✓</span>{i}</span>
           ))}
         </div>
@@ -2350,6 +2541,9 @@ const DEFAULT_ADMIN: import('./types').AdminSettings = {
   supportEmail: 'support@writeify.online',
   adsEnabled: false,
   siteDomain: 'writeify.online',
+  exportPrice: 0,
+  coupons: [],
+  razorpayKeyId: '',
 };
 
 // ── Supabase REST helpers (no SDK) ────────────────────────────────────────────
@@ -2585,7 +2779,7 @@ function UploadFontSection({
 }
 
 // ── Admin Page Component ───────────────────────────────────────────────────────
-type AdminTab = 'connection' | 'ads' | 'site' | 'fonts' | 'colors' | 'security';
+type AdminTab = 'connection' | 'ads' | 'site' | 'fonts' | 'colors' | 'security' | 'payments';
 
 function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -2605,6 +2799,10 @@ function AdminPage() {
   const [newFontLabel, setNewFontLabel] = useState('');
   const [newColorHex, setNewColorHex] = useState('#000000');
   const [newColorLabel, setNewColorLabel] = useState('');
+
+  // Payment tab local state
+  const [newCouponCode, setNewCouponCode] = useState('');
+  const [newCouponDiscount, setNewCouponDiscount] = useState(20);
 
   const isConnected = !!getSupaCreds();
 
@@ -2693,6 +2891,7 @@ function AdminPage() {
     { id: 'site',       label: 'Site Info',  icon: '🌐' },
     { id: 'fonts',      label: 'Fonts',      icon: '✍️' },
     { id: 'colors',     label: 'Colors',     icon: '🎨' },
+    { id: 'payments',   label: 'Payments',   icon: '💳' },
     { id: 'security',   label: 'Security',   icon: '🔒' },
   ];
 
@@ -3181,14 +3380,123 @@ function AdminPage() {
             </div>
           )}
 
+          {/* ══ PAYMENTS TAB ══ */}
+          {activeTab === 'payments' && (
+            <div className="space-y-6">
+              <h2 className="font-bold text-slate-800 text-lg">💳 Payments & Export Pricing</h2>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+                Set a price for exports. Users pay via Razorpay before downloading. Set ₹0 to keep exports free.
+              </div>
+
+              {/* Razorpay Key */}
+              <Field label="Razorpay Key ID (Live)"
+                value={settings.razorpayKeyId || ''}
+                onChange={v => setSettings(s => ({ ...s, razorpayKeyId: v }))}
+                placeholder="rzp_live_XXXXXXXXXXXXXXXXXX"
+                hint="Razorpay Dashboard → Settings → API Keys → Key ID" />
+
+              {/* Export Price */}
+              <div>
+                <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Export Price (₹)</label>
+                <input
+                  type="number" min={0} step={1}
+                  value={settings.exportPrice ?? 0}
+                  onChange={e => setSettings(s => ({ ...s, exportPrice: Number(e.target.value) }))}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                />
+                <p className="text-xs text-slate-400 mt-1">Set to 0 to make exports free for everyone.</p>
+              </div>
+
+              <Btn color="green" onClick={() => save({ razorpayKeyId: settings.razorpayKeyId, exportPrice: settings.exportPrice }, '✅ Payment settings saved!')}>
+                Save Payment Settings
+              </Btn>
+
+              {/* Coupons */}
+              <div className="border-t border-slate-200 pt-5 space-y-4">
+                <h3 className="font-bold text-slate-700 text-sm">🎟️ Discount Coupons</h3>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                  Coupon discounts are % off the export price. 100% = free export.
+                </div>
+
+                {/* Add new coupon */}
+                <div className="bg-slate-50 rounded-xl p-4 space-y-3 border border-slate-200">
+                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Add New Coupon</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-slate-500 block mb-1">Code</label>
+                      <input
+                        value={newCouponCode}
+                        onChange={e => setNewCouponCode(e.target.value.toUpperCase())}
+                        placeholder="e.g. STUDENT50"
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white font-mono"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-xs text-slate-500 block mb-1">Discount %</label>
+                      <input
+                        type="number" min={10} max={100} step={5}
+                        value={newCouponDiscount}
+                        onChange={e => setNewCouponDiscount(Math.min(100, Math.max(10, Number(e.target.value))))}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white text-center"
+                      />
+                    </div>
+                  </div>
+                  <Btn color="indigo" onClick={async () => {
+                    const code = newCouponCode.trim().toUpperCase();
+                    if (!code) { flash('Enter a coupon code', false); return; }
+                    if (newCouponDiscount < 10 || newCouponDiscount > 100) { flash('Discount must be 10–100%', false); return; }
+                    if ((settings.coupons || []).some(c => c.code === code)) { flash('Coupon code already exists', false); return; }
+                    const updated = [...(settings.coupons || []), { code, discount: newCouponDiscount, active: true }];
+                    await save({ coupons: updated }, `✅ Coupon "${code}" added!`);
+                    setNewCouponCode(''); setNewCouponDiscount(20);
+                  }}>
+                    + Add Coupon
+                  </Btn>
+                </div>
+
+                {/* Existing coupons */}
+                {(settings.coupons || []).length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">No coupons yet. Add one above.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {(settings.coupons || []).map((c, idx) => (
+                      <div key={c.code} className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3">
+                        <span className="font-mono font-bold text-sm text-slate-800 flex-1">{c.code}</span>
+                        <span className="text-indigo-600 font-black text-sm">{c.discount}% OFF</span>
+                        {/* Active toggle */}
+                        <button
+                          onClick={async () => {
+                            const updated = (settings.coupons || []).map((x, i) => i === idx ? { ...x, active: !x.active } : x);
+                            await save({ coupons: updated }, c.active ? `"${c.code}" disabled` : `"${c.code}" enabled`);
+                          }}
+                          className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${c.active ? 'bg-green-500' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${c.active ? 'translate-x-5' : 'translate-x-1'}`} />
+                        </button>
+                        {/* Delete */}
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete coupon "${c.code}"?`)) return;
+                            const updated = (settings.coupons || []).filter((_, i) => i !== idx);
+                            await save({ coupons: updated }, `"${c.code}" deleted`);
+                          }}
+                          className="text-red-400 hover:text-red-600 transition-colors text-xs font-bold"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </PageLayout>
   );
 }
-
-
-// ─── TOOLS HUB PAGE ──────────────────────────────────────────────────────────
 const toolsList = [
   {
     slug: 'invoice-maker',
