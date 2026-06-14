@@ -127,6 +127,73 @@ function loadRazorpayScript(): Promise<boolean> {
   });
 }
 
+// ─── PAYMENT MODAL STYLES ─────────────────────────────────────────────────────
+const PAYMENT_MODAL_STYLES = `
+@keyframes pm-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pm-card-in {
+  0%   { opacity: 0; transform: translateY(32px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pm-orb-pulse {
+  0%, 100% { transform: scale(1);   opacity: 0.6; }
+  50%       { transform: scale(1.18); opacity: 0.9; }
+}
+@keyframes pm-price-pop {
+  0%   { opacity: 0; transform: scale(0.7) translateY(8px); }
+  70%  { opacity: 1; transform: scale(1.08) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes pm-discount-slide {
+  0%   { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes pm-shine {
+  0%   { left: -80%; }
+  100% { left: 130%; }
+}
+@keyframes pm-tick-draw {
+  0%   { stroke-dashoffset: 60; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes pm-success-scale {
+  0%   { transform: scale(0.5); opacity: 0; }
+  60%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+@keyframes pm-burst {
+  0%   { transform: scale(0); opacity: 1; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+@keyframes pm-confetti-fall {
+  0%   { transform: translateY(-10px) rotate(0deg);   opacity: 1; }
+  100% { transform: translateY(80px)  rotate(360deg); opacity: 0; }
+}
+@keyframes pm-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+.pm-backdrop  { animation: pm-backdrop-in 0.25s ease both; }
+.pm-card      { animation: pm-card-in 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
+.pm-orb       { animation: pm-orb-pulse 3s ease-in-out infinite; }
+.pm-price-pop { animation: pm-price-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.2s both; }
+.pm-discount  { animation: pm-discount-slide 0.35s ease 0.1s both; }
+.pm-float     { animation: pm-float 3s ease-in-out infinite; }
+.pm-btn-shine { position: relative; overflow: hidden; }
+.pm-btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0; left: -80%;
+  width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  transform: skewX(-20deg);
+  animation: pm-shine 2.4s ease-in-out 1s infinite;
+}
+`;
+
 // ─── PAYMENT MODAL ────────────────────────────────────────────────────────────
 interface PaymentModalProps {
   exportType: 'png' | 'pdf';
@@ -141,22 +208,29 @@ function PaymentModal({ exportType, basePrice, coupons, razorpayKeyId, onSuccess
   const [couponInput, setCouponInput] = React.useState('');
   const [appliedCoupon, setAppliedCoupon] = React.useState<import('./types').CouponInfo | null>(null);
   const [couponMsg, setCouponMsg] = React.useState('');
+  const [couponOk, setCouponOk] = React.useState(false);
   const [paying, setPaying] = React.useState(false);
+  const [priceKey, setPriceKey] = React.useState(0);
 
   const discount = appliedCoupon ? appliedCoupon.discount : 0;
   const finalPrice = Math.max(0, Math.round(basePrice * (1 - discount / 100)));
   const isFree = finalPrice === 0;
 
+  const isPng = exportType === 'png';
+
   const applyCoupon = () => {
     const code = couponInput.trim().toUpperCase();
-    if (!code) { setCouponMsg('Enter a coupon code.'); return; }
+    if (!code) { setCouponMsg('Enter a coupon code first.'); setCouponOk(false); return; }
     const found = coupons.find(c => c.code.toUpperCase() === code && c.active);
     if (found) {
       setAppliedCoupon(found);
-      setCouponMsg(`✅ "${found.code}" applied — ${found.discount}% off!`);
+      setCouponMsg(`${found.code} — ${found.discount}% off applied!`);
+      setCouponOk(true);
+      setPriceKey(k => k + 1);
     } else {
       setAppliedCoupon(null);
-      setCouponMsg('❌ Invalid or expired coupon code.');
+      setCouponMsg('That code is invalid or expired.');
+      setCouponOk(false);
     }
   };
 
@@ -164,7 +238,7 @@ function PaymentModal({ exportType, basePrice, coupons, razorpayKeyId, onSuccess
     if (isFree) { onSuccess(); return; }
     setPaying(true);
     const loaded = await loadRazorpayScript();
-    if (!loaded) { alert('Failed to load payment gateway. Please try again.'); setPaying(false); return; }
+    if (!loaded) { alert('Payment gateway failed to load. Check your connection.'); setPaying(false); return; }
     const options = {
       key: razorpayKeyId,
       amount: finalPrice * 100,
@@ -173,7 +247,7 @@ function PaymentModal({ exportType, basePrice, coupons, razorpayKeyId, onSuccess
       description: `Export as ${exportType.toUpperCase()}`,
       handler: function () { onSuccess(); },
       notes: { export_type: exportType },
-      theme: { color: '#6366f1' },
+      theme: { color: isPng ? '#6366f1' : '#a855f7' },
       modal: { ondismiss: () => { setPaying(false); } },
     };
     const rzp = new (window as any).Razorpay(options);
@@ -182,83 +256,250 @@ function PaymentModal({ exportType, basePrice, coupons, razorpayKeyId, onSuccess
     setPaying(false);
   };
 
-  const gradient = exportType === 'png' ? 'from-indigo-500 to-blue-500' : 'from-pink-500 to-purple-600';
+  // Colour tokens
+  const accent1 = isPng ? '#6366f1' : '#a855f7';
+  const accent2 = isPng ? '#3b82f6' : '#ec4899';
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
-      <div className="bg-white rounded-[2rem] shadow-2xl p-7 flex flex-col gap-5 w-full max-w-sm">
-        <div className="flex items-center justify-between">
-          <div className={`h-12 w-12 rounded-2xl bg-gradient-to-br ${gradient} flex items-center justify-center shadow-lg`}>
-            <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-white" stroke="currentColor" strokeWidth={2.2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 3v13m0 0l-4-4m4 4l4-4" />
-            </svg>
+    <>
+      <style>{PAYMENT_MODAL_STYLES}</style>
+      <div
+        className="pm-backdrop fixed inset-0 z-[9999] flex items-end sm:items-center justify-center px-0 sm:px-6"
+        style={{ background: 'rgba(2,4,18,0.72)', backdropFilter: 'blur(12px)' }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      >
+        <div
+          className="pm-card relative w-full sm:max-w-sm flex flex-col overflow-hidden"
+          style={{
+            background: 'linear-gradient(160deg,#0f1021 0%,#181830 60%,#0d0d1a 100%)',
+            borderRadius: '2rem 2rem 0 0',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: `0 0 0 1px rgba(255,255,255,0.04), 0 40px 80px rgba(0,0,0,0.7), 0 0 60px ${accent1}22`,
+          }}
+          // full rounded on desktop
+          style2={{borderRadius:'2rem'}}
+        >
+          {/* Ambient glow orbs */}
+          <div className="pm-orb absolute -top-16 -left-16 w-48 h-48 rounded-full pointer-events-none"
+            style={{ background: `radial-gradient(circle, ${accent1}44 0%, transparent 70%)` }} />
+          <div className="pm-orb absolute -bottom-12 -right-12 w-40 h-40 rounded-full pointer-events-none"
+            style={{ background: `radial-gradient(circle, ${accent2}33 0%, transparent 70%)`, animationDelay: '1.2s' }} />
+
+          {/* Drag pill */}
+          <div className="flex justify-center pt-3 pb-1 sm:hidden">
+            <div className="w-10 h-1 rounded-full" style={{ background: 'rgba(255,255,255,0.15)' }} />
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-            <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div>
-          <p className="text-xl font-black text-slate-900">Export as {exportType.toUpperCase()}</p>
-          <p className="text-slate-500 text-sm mt-0.5">Pay once, download instantly</p>
-        </div>
-        <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Amount</p>
-            {discount > 0 && <p className="text-sm text-slate-400 line-through">₹{basePrice}</p>}
-            <p className="text-3xl font-black text-slate-900">{isFree ? 'FREE' : `₹${finalPrice}`}</p>
-          </div>
-          {discount > 0 && (
-            <div className="bg-green-100 text-green-700 font-black text-sm px-3 py-1.5 rounded-xl">{discount}% OFF</div>
-          )}
-        </div>
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Have a Coupon?</p>
-          <div className="flex gap-2">
-            <input
-              value={couponInput}
-              onChange={e => { setCouponInput(e.target.value); setCouponMsg(''); }}
-              onKeyDown={e => e.key === 'Enter' && applyCoupon()}
-              placeholder="e.g. STUDENT50"
-              className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-            />
-            <button onClick={applyCoupon} className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-4 py-2.5 rounded-xl text-sm transition-colors">
-              Apply
+
+          <div className="relative z-10 flex flex-col gap-5 p-6 pb-8">
+
+            {/* Header row */}
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  {/* Animated ink-pen icon */}
+                  <div className="pm-float h-9 w-9 rounded-xl flex items-center justify-center"
+                    style={{ background: `linear-gradient(135deg, ${accent1}, ${accent2})`, boxShadow: `0 4px 20px ${accent1}60` }}>
+                    <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 text-white" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-bold tracking-widest uppercase" style={{ color: accent1 }}>Writeify</span>
+                </div>
+                <p className="text-white font-black text-xl leading-tight">
+                  Download as {exportType.toUpperCase()}
+                </p>
+                <p className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>One-time · Instant · Yours forever</p>
+              </div>
+              <button onClick={onClose}
+                className="rounded-full p-1.5 transition-all"
+                style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}>
+                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Price card */}
+            <div className="rounded-2xl p-4 flex items-center justify-between"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div>
+                <p className="text-xs font-semibold tracking-widest uppercase mb-1" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  Total
+                </p>
+                {discount > 0 && (
+                  <p className="text-sm line-through" style={{ color: 'rgba(255,255,255,0.3)' }}>₹{basePrice}</p>
+                )}
+                <p key={priceKey} className="pm-price-pop text-4xl font-black text-white leading-none">
+                  {isFree ? 'FREE' : `₹${finalPrice}`}
+                </p>
+              </div>
+              {discount > 0 ? (
+                <div className="pm-discount flex flex-col items-center gap-1">
+                  <div className="px-3 py-1.5 rounded-xl font-black text-sm"
+                    style={{ background: `linear-gradient(135deg, #10b981, #059669)`, color: 'white', boxShadow: '0 4px 12px rgba(16,185,129,0.4)' }}>
+                    {discount}% OFF
+                  </div>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>Coupon applied</p>
+                </div>
+              ) : (
+                <div className="text-right">
+                  <div className="text-3xl mb-1">
+                    {isPng ? '🖼️' : '📄'}
+                  </div>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    {isPng ? 'Page 1 · PNG' : `All pages · PDF`}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Coupon input */}
+            <div className="space-y-2">
+              <p className="text-xs font-bold tracking-widest uppercase" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                Coupon Code
+              </p>
+              <div className="flex gap-2">
+                <input
+                  value={couponInput}
+                  onChange={e => { setCouponInput(e.target.value.toUpperCase()); setCouponMsg(''); setCouponOk(false); }}
+                  onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                  placeholder="e.g. STUDENT50"
+                  className="flex-1 text-sm font-mono font-bold px-4 py-3 rounded-xl outline-none tracking-wider transition-all"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: couponOk ? '1.5px solid #10b981' : '1.5px solid rgba(255,255,255,0.1)',
+                    color: 'white',
+                    caretColor: accent1,
+                  }}
+                />
+                <button onClick={applyCoupon}
+                  className="px-4 py-3 rounded-xl text-sm font-bold transition-all"
+                  style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.8)', border: '1.5px solid rgba(255,255,255,0.1)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.18)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}>
+                  Apply
+                </button>
+              </div>
+              {couponMsg && (
+                <p className="text-xs font-semibold flex items-center gap-1.5"
+                  style={{ color: couponOk ? '#10b981' : '#f87171' }}>
+                  {couponOk ? '✓' : '✕'} {couponMsg}
+                </p>
+              )}
+            </div>
+
+            {/* Pay button */}
+            <button
+              onClick={handlePay}
+              disabled={paying}
+              className="pm-btn-shine w-full py-4 rounded-2xl font-black text-base text-white transition-all disabled:opacity-50"
+              style={{
+                background: `linear-gradient(135deg, ${accent1} 0%, ${accent2} 100%)`,
+                boxShadow: `0 8px 32px ${accent1}55, 0 2px 8px rgba(0,0,0,0.4)`,
+                letterSpacing: '0.02em',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 40px ${accent1}70, 0 4px 12px rgba(0,0,0,0.5)`; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = `0 8px 32px ${accent1}55, 0 2px 8px rgba(0,0,0,0.4)`; }}
+            >
+              {paying
+                ? <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                    </svg>
+                    Opening Razorpay…
+                  </span>
+                : isFree
+                  ? '🎉 Download for Free'
+                  : `Pay ₹${finalPrice} & Download`
+              }
             </button>
+
+            {/* Trust row */}
+            <div className="flex items-center justify-center gap-3">
+              <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.07)' }} />
+              <p className="text-xs flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Secured by Razorpay · UPI · Cards · Net Banking
+              </p>
+              <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.07)' }} />
+            </div>
+
           </div>
-          {couponMsg && (
-            <p className={`text-xs font-medium ${couponMsg.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{couponMsg}</p>
-          )}
         </div>
-        <button onClick={handlePay} disabled={paying}
-          className={`w-full py-3.5 rounded-2xl font-black text-sm text-white transition-all disabled:opacity-50 bg-gradient-to-r ${gradient} shadow-lg`}>
-          {paying ? '⏳ Opening payment…' : isFree ? '🎉 Download Free' : `Pay ₹${finalPrice} & Download`}
-        </button>
-        <p className="text-xs text-slate-400 text-center">Secured by Razorpay · UPI, Cards, Net Banking accepted</p>
       </div>
-    </div>
+    </>
   );
 }
 
 // ─── PAYMENT SUCCESS OVERLAY ──────────────────────────────────────────────────
 function PaymentSuccess({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = React.useState<'burst' | 'done'>('burst');
+
   React.useEffect(() => {
-    const t = setTimeout(onDone, 2200);
-    return () => clearTimeout(t);
+    const t1 = setTimeout(() => setPhase('done'), 400);
+    const t2 = setTimeout(onDone, 2600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [onDone]);
+
+  // Random confetti pieces
+  const confetti = React.useMemo(() => Array.from({ length: 14 }, (_, i) => ({
+    id: i,
+    color: ['#6366f1','#a855f7','#ec4899','#10b981','#f59e0b','#3b82f6'][i % 6],
+    left: `${10 + (i * 6.2) % 78}%`,
+    delay: `${(i * 0.09).toFixed(2)}s`,
+    size: 6 + (i % 4) * 2,
+  })), []);
+
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm px-6">
-      <div className="bg-white rounded-[2rem] shadow-2xl p-8 flex flex-col items-center gap-4 w-full max-w-xs text-center">
-        <div className="h-20 w-20 rounded-full bg-green-100 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10 text-green-500" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          </svg>
+    <>
+      <style>{PAYMENT_MODAL_STYLES}</style>
+      <div className="pm-backdrop fixed inset-0 z-[9999] flex items-center justify-center px-6"
+        style={{ background: 'rgba(2,4,18,0.85)', backdropFilter: 'blur(16px)' }}>
+
+        {/* Confetti */}
+        {confetti.map(c => (
+          <div key={c.id} className="absolute top-1/3 pointer-events-none"
+            style={{
+              left: c.left,
+              width: c.size, height: c.size,
+              borderRadius: c.id % 2 === 0 ? '50%' : '2px',
+              background: c.color,
+              animation: `pm-confetti-fall 1.8s ease-out ${c.delay} both`,
+            }} />
+        ))}
+
+        <div className="flex flex-col items-center gap-5 text-center">
+          {/* Burst rings */}
+          <div className="relative flex items-center justify-center">
+            <div className="absolute w-28 h-28 rounded-full" style={{ background: 'rgba(99,102,241,0.15)', animation: 'pm-burst 0.8s ease-out 0.1s both' }} />
+            <div className="absolute w-20 h-20 rounded-full" style={{ background: 'rgba(99,102,241,0.25)', animation: 'pm-burst 0.8s ease-out 0.05s both' }} />
+
+            {/* Check circle */}
+            <div style={{ animation: 'pm-success-scale 0.5s cubic-bezier(0.34,1.56,0.64,1) 0.15s both' }}>
+              <div className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg,#10b981,#059669)', boxShadow: '0 8px 40px rgba(16,185,129,0.5)' }}>
+                <svg viewBox="0 0 24 24" fill="none" className="h-10 w-10" stroke="white" strokeWidth={2.5}
+                  strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 13l4 4L19 7"
+                    strokeDasharray="60"
+                    style={{ animation: 'pm-tick-draw 0.4s ease 0.4s both', strokeDashoffset: 60 }} />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ animation: 'pm-card-in 0.5s ease 0.3s both' }}>
+            <p className="text-3xl font-black text-white mb-1">Payment done!</p>
+            <p className="text-base" style={{ color: 'rgba(255,255,255,0.5)' }}>Your download is starting…</p>
+          </div>
         </div>
-        <p className="text-2xl font-black text-slate-900">Payment Successful!</p>
-        <p className="text-slate-500 text-sm">Preparing your download…</p>
       </div>
-    </div>
+    </>
   );
 }
 
