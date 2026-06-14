@@ -3,53 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="google-adsense-account" content="ca-pub-7120952836131032">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#6366f1" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Writeify" />
-    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
-    <link rel="apple-touch-icon" sizes="144x144" href="/icons/icon-144x144.png" />
-    <link rel="apple-touch-icon" sizes="128x128" href="/icons/icon-128x128.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
-    <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96x96.png" />
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Writeify - Text to Handwriting - Convert Text to Beautiful Handwriting</title>
     <meta name="description" content="Convert your text to beautiful handwriting with multiple colors, fonts, and paper styles. Download as PNG or PDF. Free online handwriting generator tool." />
     <meta name="keywords" content="text to handwriting, handwriting converter, handwriting generator, convert text, handwriting fonts, PDF handwriting" />
     <meta name="author" content="Writeify" />
-
-    <!-- Open Graph -->
     <meta property="og:title" content="Writeify - Text to Handwriting" />
     <meta property="og:description" content="Convert your text to beautiful multi-color handwriting. Choose fonts, colors, paper styles and download as PNG or PDF." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/icons/icon-512x512.png" />
-
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Dancing+Script:wght@400;500;600;700&family=Homemade+Apple&family=Sacramento&family=Shadows+Into+Light&family=Indie+Flower&family=Kalam:wght@300;400;700&display=swap" rel="stylesheet" />
-
-    <!-- AdSense -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7120952836131032" crossorigin="anonymous"></script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- Register Service Worker -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .then(function(reg) { console.log('SW registered:', reg.scope); })
-            .catch(function(err) { console.log('SW registration failed:', err); });
-        });
-      }
-    </script>
   </body>
 </html>
