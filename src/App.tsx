@@ -47,38 +47,6 @@ function prand(seed: number) {
   return x - Math.floor(x);
 }
 
-// ─── FONT MIX GROUPS ─────────────────────────────────────────────────────────
-// Each entry maps a "visible" font name to 3-4 compatible fonts that get mixed
-// at character level. The sub-fonts are loaded silently — users never see them.
-// High-frequency letters (e,a,i,o,t,s,n,r,h,l) switch less often (12% chance)
-// Rare letters (z,q,x,j,k) switch more often (50% chance) — mirrors real handwriting.
-export const FONT_MIX_GROUPS: Record<string, string[]> = {
-  'Student Classic Mix': ['Caveat', 'Patrick Hand', 'Neucha', 'Gochi Hand'],
-  'Marker Pen Mix':      ['Reenie Beanie', 'Just Another Hand', 'Shadows Into Light'],
-  'Neat Writer Mix':     ['Kalam', 'Schoolbell', 'Short Stack'],
-  'Cursive Blend Mix':   ['Dancing Script', 'Sacramento', 'Cedarville Cursive'],
-};
-
-// All sub-fonts that need to be preloaded when any mix group is selected
-const ALL_MIX_SUBFONTS = Array.from(new Set(Object.values(FONT_MIX_GROUPS).flat()));
-
-// Returns the font to use for a given character in mix mode.
-// Same char at same position always picks same font — stable across re-renders.
-function getMixFont(
-  ch: string,
-  charIdx: number,
-  lineIndex: number,
-  mixFonts: string[]
-): string {
-  if (mixFonts.length <= 1) return mixFonts[0] ?? ch;
-  const highFreq = 'eaiotsnrhl '.includes(ch.toLowerCase());
-  const switchProb = highFreq ? 0.12 : 0.50;
-  const seed = ch.charCodeAt(0) * 317 + charIdx * 7 + lineIndex * 31;
-  if (prand(seed) >= switchProb) return mixFonts[0];
-  const altIdx = 1 + Math.floor(prand(seed * 13) * (mixFonts.length - 1));
-  return mixFonts[Math.min(altIdx, mixFonts.length - 1)];
-}
-
 // ─── EXPORT ANIMATION OVERLAY ────────────────────────────────────────────────
 function ExportAnimation({ type, pageCount = 1 }: { type: 'png' | 'pdf' | false; pageCount?: number }) {
   const [progress, setProgress] = useState(5);
@@ -587,9 +555,6 @@ function renderHandwritingCanvas(
     topicOffsetY?: number;
     pressureEffect?: boolean;
     paperShadow?: boolean;
-    fontMix?: boolean;
-    baselineWave?: boolean;
-    naturalVariation?: boolean;
   }
 ) {
   const scale = options.scale ?? 2;
@@ -755,7 +720,6 @@ function renderHandwritingCanvas(
   if (options.paperType === 'double') {
     const dblX = DBL_MARGIN2 + 4 + (options.marginLeft ?? 0);  // 4px = tight against margin line, no visible gap
     const dblFirstY = DBL_HEADER_H + Math.round(options.lineHeight * 0.85);  // text baseline ON first ruled line
-    const mixFonts = options.fontMix ? (FONT_MIX_GROUPS[options.font] ?? null) : null;
     ctx.save();
     ctx.beginPath();
     ctx.rect(dblX, DBL_HEADER_H - 4, A4_WIDTH_PX - dblX - PAPER_PAD_RIGHT, A4_HEIGHT_PX - DBL_HEADER_H + 4 - PAPER_PAD_BOTTOM);
@@ -764,33 +728,22 @@ function renderHandwritingCanvas(
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
     pageLines.forEach((lineChunks, lineIndex) => {
-      // Natural variation: per-line left margin drift ±3px
-      const lineDrift = options.naturalVariation ? (prand(lineIndex * 37 + 1) - 0.5) * 6 : 0;
-      let x = dblX + lineDrift;
+      let x = dblX;
       const y = dblFirstY + lineIndex * options.lineHeight;
-      let charIdx = 0;
-      if (options.pressureEffect || mixFonts || options.baselineWave || options.naturalVariation) {
+      if (options.pressureEffect) {
+        let charIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
-            const seed = lineIndex * 5000 + charIdx;
-            // Font selection
-            const chosenFont = mixFonts ? getMixFont(ch, charIdx, lineIndex, mixFonts) : options.font;
-            // Size variation ±6%
-            const sizeVar = options.naturalVariation ? options.fontSize * (0.94 + prand(seed * 7 + 7) * 0.12) : options.fontSize;
-            ctx.font = `${sizeVar}px "${chosenFont}", cursive`;
             const w = ctx.measureText(ch).width;
-            // Baseline wave: slow sine drift + micro jitter
-            const waveY = options.baselineWave ? Math.sin(charIdx * 0.18 + lineIndex * 1.3) * 3.5 : 0;
-            const jY = options.pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 + waveY : waveY;
-            const jRot = options.pressureEffect ? (prand(seed * 7 + 2) - 0.5) * 0.08 : 0;
-            const inkAlpha = options.pressureEffect ? 0.78 + prand(seed * 7 + 3) * 0.22 : 1;
-            const strokeW = options.pressureEffect ? prand(seed * 7 + 5) * 1.1 : 0;
-            // Letter spacing variation ±15%
-            const spacingVar = options.naturalVariation ? (0.85 + prand(seed * 7 + 6) * 0.30) : 1;
+            const seed = lineIndex * 5000 + charIdx;
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
+            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
             ctx.save();
             ctx.translate(x, y + jY);
-            if (jRot) ctx.rotate(jRot);
+            ctx.rotate(jRot);
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
             ctx.fillText(ch, 0, 0);
@@ -802,7 +755,7 @@ function renderHandwritingCanvas(
               ctx.strokeText(ch, 0, 0);
             }
             ctx.restore();
-            x += w * spacingVar;
+            x += w;
             charIdx++;
           }
           x += (options.wordSpacing ?? 0);
@@ -827,9 +780,7 @@ function renderHandwritingCanvas(
   ctx.font = `${options.fontSize}px "${options.font}", cursive`;
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = (options.textAlign as CanvasTextAlign) || 'left';
-  const mixFontsMain = options.fontMix ? (FONT_MIX_GROUPS[options.font] ?? null) : null;
-  const needsCharLoop = options.pressureEffect || !!mixFontsMain || options.baselineWave || options.naturalVariation;
-  if (needsCharLoop) ctx.textAlign = 'left';
+  if (options.pressureEffect) ctx.textAlign = 'left'; // per-character drawing needs left anchor
 
   if (options.showEmpty && pageLines.length === 0) {
     ctx.fillStyle = hexWithAlpha(options.defaultColor, 0.3);
@@ -837,32 +788,24 @@ function renderHandwritingCanvas(
   } else {
     pageLines.forEach((lineChunks, lineIndex) => {
       const lineText = lineChunks.map(c => c.text).join('');
-      const lineDrift = options.naturalVariation ? (prand(lineIndex * 37 + 1) - 0.5) * 6 : 0;
-      let x = options.textAlign === 'center'
-        ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2
-        : options.textAlign === 'right'
-          ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width
-          : textX + lineDrift;
+      let x = options.textAlign === 'center' ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2 : options.textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width : textX;
       const y = firstBaseline + lineIndex * options.lineHeight;
-      if (needsCharLoop) {
+      if (options.pressureEffect) {
         let charIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
-            const seed = lineIndex * 5000 + charIdx;
-            const chosenFont = mixFontsMain ? getMixFont(ch, charIdx, lineIndex, mixFontsMain) : options.font;
-            const sizeVar = options.naturalVariation ? options.fontSize * (0.94 + prand(seed * 7 + 7) * 0.12) : options.fontSize;
-            ctx.font = `${sizeVar}px "${chosenFont}", cursive`;
             const w = ctx.measureText(ch).width;
-            const waveY = options.baselineWave ? Math.sin(charIdx * 0.18 + lineIndex * 1.3) * 3.5 : 0;
-            const jY = options.pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 + waveY : waveY;
-            const jRot = options.pressureEffect ? (prand(seed * 7 + 2) - 0.5) * 0.08 : 0;
-            const inkAlpha = options.pressureEffect ? 0.78 + prand(seed * 7 + 3) * 0.22 : 1;
-            const strokeW = options.pressureEffect ? prand(seed * 7 + 5) * 1.1 : 0;
-            const spacingVar = options.naturalVariation ? (0.85 + prand(seed * 7 + 6) * 0.30) : 1;
+            const seed = lineIndex * 5000 + charIdx;
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
+            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
             ctx.save();
             ctx.translate(x, y + jY);
-            if (jRot) ctx.rotate(jRot);
+            ctx.rotate(jRot);
+            // Ink — fill + variable-width stroke so some strokes look heavier
+            // (simulates downstroke pressure vs. light upstrokes)
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
             ctx.fillText(ch, 0, 0);
@@ -874,7 +817,7 @@ function renderHandwritingCanvas(
               ctx.strokeText(ch, 0, 0);
             }
             ctx.restore();
-            x += w * spacingVar;
+            x += w;
             charIdx++;
           }
           x += (options.wordSpacing ?? 0);
@@ -1092,18 +1035,16 @@ interface HandwritingSvgProps {
   textAlign?: 'left'|'center'|'right';
   firstBaselineOverride?: number;
   pressureEffect?: boolean;
-  fontMix?: boolean;
-  baselineWave?: boolean;
-  naturalVariation?: boolean;
 }
 
 const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
-  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride, pressureEffect = false, fontMix = false, baselineWave = false, naturalVariation = false,
+  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride, pressureEffect = false,
 }) => {
+  // firstBaseline = y where alphabetic baseline sits (bottom of A,B,C; descenders g,p,y go below)
+  // This MUST exactly match the y of ruled lines drawn in PaperBg
   const firstBaseline = firstBaselineOverride ?? (getFirstBaseline(lineHeight) + topOffset);
   const x = PAPER_PAD_LEFT + marginLeft;
-  const mixFonts = fontMix ? (FONT_MIX_GROUPS[font] ?? null) : null;
-  const needsCharLoop = pressureEffect || !!mixFonts || baselineWave || naturalVariation;
+  const maxTextWidth = A4_WIDTH_PX - x - PAPER_PAD_RIGHT;
 
   return (
     <svg
@@ -1136,11 +1077,12 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
             const anchor = textAlign === 'center' ? 'middle' : textAlign === 'right' ? 'end' : 'start';
             const wsStyle = { wordSpacing: wordSpacing > 0 ? `${wordSpacing}px` : undefined };
 
-            if (needsCharLoop && lineChunks.length > 0) {
+            if (pressureEffect && lineChunks.length > 0) {
               let charIdx = 0;
-              let prevDy = 0;
+              let prevOffset = 0;
               return (
                 <g key={idx}>
+                  {/* Ink — drawn character-by-character with deterministic micro-jitter */}
                   <text
                     x={tx} y={y}
                     fontFamily={`'${font}', cursive`}
@@ -1154,23 +1096,17 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
                       Array.from(chunk.text).map((ch, k) => {
                         const seed = idx * 5000 + charIdx;
                         charIdx++;
-                        const chosenFont = mixFonts ? getMixFont(ch, charIdx - 1, idx, mixFonts) : font;
-                        const sizeVar = naturalVariation ? fontSize * (0.94 + prand(seed * 7 + 7) * 0.12) : fontSize;
-                        const waveY = baselineWave ? Math.sin((charIdx - 1) * 0.18 + idx * 1.3) * 3.5 : 0;
-                        const microY = pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 : 0;
-                        const totalOffset = waveY + microY;
-                        const dy = totalOffset - prevDy;
-                        prevDy = totalOffset;
-                        const opacity = pressureEffect ? 0.78 + prand(seed * 7 + 3) * 0.22 : 1;
-                        const strokeW = pressureEffect ? prand(seed * 7 + 5) * 1.1 : 0;
+                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;  // ±1.3px
+                        const opacity = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0
+                        const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight
+                        const dy = offset - prevOffset;
+                        prevOffset = offset;
                         return (
                           <tspan
                             key={`${ci}-${k}`}
                             dy={dy}
-                            fontFamily={chosenFont !== font ? `'${chosenFont}', cursive` : undefined}
-                            fontSize={naturalVariation && sizeVar !== fontSize ? sizeVar : undefined}
                             fill={chunk.color}
-                            fillOpacity={opacity < 1 ? opacity : undefined}
+                            fillOpacity={opacity}
                             stroke={strokeW > 0.2 ? chunk.color : 'none'}
                             strokeWidth={strokeW > 0.2 ? strokeW : undefined}
                             strokeOpacity={strokeW > 0.2 ? opacity * 0.85 : undefined}
@@ -1237,16 +1173,14 @@ interface PageProps {
   topicOffsetY?: number;
   pressureEffect?: boolean;
   paperShadow?: boolean;
-  fontMix?: boolean;
-  baselineWave?: boolean;
-  naturalVariation?: boolean;
-}: React.FC<PageProps> = ({
+}
+
+const A4Page: React.FC<PageProps> = ({
   pageLines, font, fontSize, marginLeft, lineHeight, paperType,
   pageNumber, totalPages, showEmpty, defaultColor, wordSpacing = 0,
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
   topic = '', topicColor, topicFontSize = 20,
   topicOffsetX = 0, topicOffsetY = 0, pressureEffect = false, paperShadow = false,
-  fontMix = false, baselineWave = false, naturalVariation = false,
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -1392,15 +1326,12 @@ interface PageProps {
         defaultColor={defaultColor}
         textAlign={textAlign}
         pressureEffect={pressureEffect}
-        fontMix={fontMix}
-        baselineWave={baselineWave}
-        naturalVariation={naturalVariation}
         firstBaselineOverride={
           isDouble
-            ? DBL_HEADER_H + Math.round(lineHeight * 0.85)
+            ? DBL_HEADER_H + Math.round(lineHeight * 0.85)           // matches dblTextFirstY in PaperBg
             : showHeader
-              ? DBL_HEADER_H + lineHeight
-              : PAPER_PAD_TOP + lineHeight
+              ? DBL_HEADER_H + lineHeight                             // lined+header: first line after header
+              : PAPER_PAD_TOP + lineHeight                            // lined normal: matches PaperBg firstBaseline
         }
       />
 
@@ -1466,9 +1397,6 @@ Gravity of Sun keeps all planets in orbit.`;
   const [topicOffsetY, setTopicOffsetY] = useState(0);
   const [pressureEffect, setPressureEffect] = useState(false);
   const [paperShadow, setPaperShadow] = useState(false);
-  const [fontMix, setFontMix] = useState(false);
-  const [baselineWave, setBaselineWave] = useState(false);
-  const [naturalVariation, setNaturalVariation] = useState(false);
   const [downloading, setDownloading] = useState<false | 'png' | 'pdf'>(false);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const [fontReadyTick, setFontReadyTick] = useState(0);
@@ -1550,15 +1478,10 @@ Gravity of Sun keeps all planets in orbit.`;
     ...COLORS,
     ...(adminSettings.customColors || []),
   ], [adminSettings]);
-  const allFonts = useMemo(() => {
-    // FONTS from constants.ts already contains:
-    //   • 7 originals  • 8 new Google fonts  • 4 ✦ Mix group entries
-    // We only append admin-uploaded custom fonts on top.
-    return [
-      ...FONTS,
-      ...(adminSettings.customFonts || []),
-    ];
-  }, [adminSettings]);
+  const allFonts = useMemo(() => [
+    ...FONTS,
+    ...(adminSettings.customFonts || []),
+  ], [adminSettings]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -1584,19 +1507,6 @@ Gravity of Sun keeps all planets in orbit.`;
   useEffect(() => {
     waitForFonts().then(() => setFontReadyTick(tick => tick + 1));
   }, [font]);
-
-  // Preload all mix sub-fonts once on mount so they're ready when user enables fontMix
-  useEffect(() => {
-    ALL_MIX_SUBFONTS.forEach(f => {
-      const id = `gfont-mix-${f.replace(/\s+/g, '-')}`;
-      if (document.getElementById(id)) return;
-      const link = document.createElement('link');
-      link.id = id;
-      link.rel = 'stylesheet';
-      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(f)}&display=swap`;
-      document.head.appendChild(link);
-    });
-  }, []);
 
   const pages = useMemo<Chunk[][][]>(() => {
     if (allLines.length === 0) return [[]];
@@ -1671,9 +1581,6 @@ Gravity of Sun keeps all planets in orbit.`;
           topicOffsetY,
           pressureEffect,
           paperShadow,
-          fontMix,
-          baselineWave,
-          naturalVariation,
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -1695,7 +1602,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow, fontMix, baselineWave, naturalVariation]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow]);
 
   const exportPDF = useCallback(async () => {
     const container = previewContainerRef.current;
@@ -1734,9 +1641,6 @@ Gravity of Sun keeps all planets in orbit.`;
             topicOffsetY,
             pressureEffect,
             paperShadow,
-            fontMix,
-            baselineWave,
-            naturalVariation,
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1757,7 +1661,7 @@ Gravity of Sun keeps all planets in orbit.`;
       if (elapsed < 3000) await new Promise(r => setTimeout(r, 3000 - elapsed));
       setDownloading(false);
     }
-  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow, fontMix, baselineWave, naturalVariation]);
+  }, [defaultColor, font, fontSize, lineHeight, marginLeft, pages, paperType, rawText, wordSpacing, pageDate, showHeader, textAlign, topic, topicColor, topicFontSize, topicOffsetX, topicOffsetY, pressureEffect, paperShadow]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1921,38 +1825,12 @@ Gravity of Sun keeps all planets in orbit.`;
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Handwriting Font</label>
                 <select value={font} onChange={e => setFont(e.target.value as FontFamily)}
                   className="w-full border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm text-slate-800 bg-white/90 shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/15 focus:border-indigo-400">
-                  {/* Regular fonts */}
-                  <optgroup label="── Handwriting Fonts ──">
-                    {FONTS.filter(f => !f.label.startsWith('✦')).map(f => (
-                      <option key={f.family} value={f.family}>{f.label}</option>
-                    ))}
-                  </optgroup>
-                  {/* Mix group fonts */}
-                  <optgroup label="── ✦ Mix Fonts (enable Font Mix toggle) ──">
-                    {FONTS.filter(f => f.label.startsWith('✦')).map(f => (
-                      <option key={f.family} value={f.family}>{f.label}</option>
-                    ))}
-                  </optgroup>
-                  {/* Admin uploaded custom fonts */}
-                  {(adminSettings.customFonts || []).length > 0 && (
-                    <optgroup label="── Custom Uploaded ──">
-                      {(adminSettings.customFonts || []).map(f => (
-                        <option key={f.family} value={f.family}>{f.label}</option>
-                      ))}
-                    </optgroup>
-                  )}
+                  {allFonts.map(f => <option key={f.family} value={f.family}>{f.label}</option>)}
                 </select>
-                {/* Live preview of selected font */}
                 <div style={{ fontFamily: `'${font}', cursive`, fontSize: 18, color: defaultColor }}
                   className="mt-1.5 truncate pl-1">
                   The quick brown fox…
                 </div>
-                {/* Hint when a Mix font is selected but Font Mix toggle is OFF */}
-                {FONT_MIX_GROUPS[font] && !fontMix && (
-                  <p className="text-[11px] text-violet-500 mt-1 pl-1">
-                    💡 Turn on <strong>Font Mix</strong> below to activate character blending
-                  </p>
-                )}
               </div>
 
 
@@ -2017,48 +1895,6 @@ Gravity of Sun keeps all planets in orbit.`;
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${paperShadow ? 'bg-indigo-500' : 'bg-slate-200'}`}
                 >
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${paperShadow ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-
-              {/* Font Mix toggle */}
-              <div className="flex items-center justify-between bg-violet-50 rounded-2xl px-3 py-2.5">
-                <div>
-                  <p className="text-xs font-bold text-violet-800">✦ Font Mix</p>
-                  <p className="text-[11px] text-violet-500 mt-0.5">Blends similar fonts per character — works with ✦ Mix fonts</p>
-                </div>
-                <button
-                  onClick={() => setFontMix(p => !p)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${fontMix ? 'bg-violet-500' : 'bg-slate-200'}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${fontMix ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-
-              {/* Baseline Wave toggle */}
-              <div className="flex items-center justify-between bg-sky-50 rounded-2xl px-3 py-2.5">
-                <div>
-                  <p className="text-xs font-bold text-sky-800">〜 Baseline Wave</p>
-                  <p className="text-[11px] text-sky-500 mt-0.5">Lines gently undulate like real handwriting</p>
-                </div>
-                <button
-                  onClick={() => setBaselineWave(p => !p)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${baselineWave ? 'bg-sky-500' : 'bg-slate-200'}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${baselineWave ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
-              </div>
-
-              {/* Natural Variation toggle */}
-              <div className="flex items-center justify-between bg-emerald-50 rounded-2xl px-3 py-2.5">
-                <div>
-                  <p className="text-xs font-bold text-emerald-800">⟳ Natural Variation</p>
-                  <p className="text-[11px] text-emerald-500 mt-0.5">Size, spacing &amp; margin vary per character &amp; line</p>
-                </div>
-                <button
-                  onClick={() => setNaturalVariation(p => !p)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${naturalVariation ? 'bg-emerald-500' : 'bg-slate-200'}`}
-                >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${naturalVariation ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>
