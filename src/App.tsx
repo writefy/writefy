@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import type { ColourSpan, LineColor, FontFamily, PaperType, Chunk } from './types';
-import { COLORS, FONTS, PAPER_TYPES, PAPER_BG_COLORS } from './constants';
+import { COLORS, FONTS, PAPER_TYPES, PAPER_BG_COLORS, MIXED_FONT_POOLS, MIXED_FONT_FAMILIES } from './constants';
 import { applySpan, clampSpans, buildChunks, chunksToLines } from './utils/spanUtils';
 import AdBanner from './components/AdBanner';
 
@@ -45,6 +45,36 @@ function hexWithAlpha(hex: string, alpha: number) {
 function prand(seed: number) {
   const x = Math.sin(seed * 12.9898) * 43758.5453123;
   return x - Math.floor(x);
+}
+
+// ─── DYNAMIC MIXED FONT ENGINE ───────────────────────────────────────────────
+// Returns the real font to use for a given character index when a mixed font
+// is selected. Uses deterministic seeds so the same text always renders
+// identically (stable across re-renders, previews, and PDF/PNG exports).
+
+function getMixedFont(fontFamily: string, charIndex: number, wordIndex: number): string {
+  const pool = MIXED_FONT_POOLS[fontFamily];
+  if (!pool || pool.length === 0) return fontFamily;
+
+  // Word-level dominant font (one per word) + occasional per-character swap
+  const wordSeed  = wordIndex * 31337 + 7;
+  const charSeed  = charIndex * 99991 + 13;
+  const dominantIdx = Math.floor(prand(wordSeed) * pool.length);
+  // ~15% chance a character switches to a different font for realism
+  const useAlt = prand(charSeed * 3 + 5) < 0.15;
+  const altIdx  = Math.floor(prand(charSeed * 7 + 2) * pool.length);
+  return pool[useAlt ? altIdx : dominantIdx];
+}
+
+// Extra per-character variation amounts for mixed fonts (on top of pressureEffect values)
+function getMixedVariation(charIndex: number, wordIndex: number) {
+  const s = charIndex * 1234 + wordIndex * 5678;
+  return {
+    baselineDrift: (prand(s + 1) - 0.5) * 3.5,    // ±1.75px extra baseline drift
+    rotation:      (prand(s + 2) - 0.5) * 0.06,   // ±~1.7° extra tilt
+    opacityDelta:  (prand(s + 3) - 0.5) * 0.12,   // ±0.06 opacity shift
+    spacingDelta:  (prand(s + 4) - 0.5) * 1.2,    // ±0.6px spacing jitter
+  };
 }
 
 // ─── EXPORT ANIMATION OVERLAY ────────────────────────────────────────────────
@@ -503,10 +533,22 @@ function PaymentSuccess({ onDone }: { onDone: () => void }) {
   );
 }
 
-async function waitForFonts() {
-  if ('fonts' in document) {
-    await document.fonts.ready;
+async function waitForFonts(extraFamilies?: string[]) {
+  if (!('fonts' in document)) return;
+  await document.fonts.ready;
+  if (extraFamilies && extraFamilies.length > 0) {
+    await Promise.allSettled(
+      extraFamilies.map(f => (document.fonts as FontFaceSet).load(`16px "${f}"`, 'Ag'))
+    );
   }
+}
+
+// Shared off-screen canvas for accurate per-font character width measurement
+const _measureCanvas = document.createElement('canvas');
+const _measureCtx = _measureCanvas.getContext('2d')!;
+function measureChar(ch: string, fontFamily: string, fontSize: number): number {
+  _measureCtx.font = `${fontSize}px "${fontFamily}", cursive`;
+  return _measureCtx.measureText(ch === ' ' ? ' ' : ch).width;
 }
 
 // Mimics the soft vignette / photographed-paper shadow look (darker edges,
@@ -727,40 +769,51 @@ function renderHandwritingCanvas(
     ctx.font = `${options.fontSize}px "${options.font}", cursive`;
     ctx.textBaseline = 'alphabetic';
     ctx.textAlign = 'left';
+    const isMixedFont = MIXED_FONT_FAMILIES.has(options.font);
     pageLines.forEach((lineChunks, lineIndex) => {
       let x = dblX;
       const y = dblFirstY + lineIndex * options.lineHeight;
-      if (options.pressureEffect) {
+      if (options.pressureEffect || isMixedFont) {
         let charIdx = 0;
+        let wordIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
+            if (ch === ' ') { wordIdx++; }
+            // Resolve actual font for this character
+            const activeFont = isMixedFont
+              ? getMixedFont(options.font, charIdx, wordIdx)
+              : options.font;
+            ctx.font = `${options.fontSize}px "${activeFont}", cursive`;
             const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
-            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
-            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22;
+            const strokeW = prand(seed * 7 + 5) * 1.1;
+            // Extra variation for mixed fonts
+            const mv = isMixedFont ? getMixedVariation(charIdx, wordIdx) : null;
             ctx.save();
-            ctx.translate(x, y + jY);
-            ctx.rotate(jRot);
-            ctx.globalAlpha = inkAlpha;
+            ctx.translate(x, y + jY + (mv?.baselineDrift ?? 0));
+            ctx.rotate(jRot + (mv?.rotation ?? 0));
+            ctx.globalAlpha = Math.max(0.65, Math.min(1, inkAlpha + (mv?.opacityDelta ?? 0)));
             ctx.fillStyle = chunk.color;
             ctx.fillText(ch, 0, 0);
             if (strokeW > 0.2) {
               ctx.lineWidth = strokeW;
               ctx.lineJoin = 'round';
               ctx.strokeStyle = chunk.color;
-              ctx.globalAlpha = inkAlpha * 0.85;
+              ctx.globalAlpha = Math.max(0.55, Math.min(1, (inkAlpha + (mv?.opacityDelta ?? 0)) * 0.85));
               ctx.strokeText(ch, 0, 0);
             }
             ctx.restore();
-            x += w;
+            x += w + (mv?.spacingDelta ?? 0);
             charIdx++;
           }
           x += (options.wordSpacing ?? 0);
         });
       } else {
+        ctx.font = `${options.fontSize}px "${options.font}", cursive`;
         lineChunks.forEach(chunk => {
           ctx.fillStyle = chunk.color;
           ctx.fillText(chunk.text, x, y);
@@ -780,7 +833,8 @@ function renderHandwritingCanvas(
   ctx.font = `${options.fontSize}px "${options.font}", cursive`;
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = (options.textAlign as CanvasTextAlign) || 'left';
-  if (options.pressureEffect) ctx.textAlign = 'left'; // per-character drawing needs left anchor
+  const isMixedFontMain = MIXED_FONT_FAMILIES.has(options.font);
+  if (options.pressureEffect || isMixedFontMain) ctx.textAlign = 'left'; // per-character drawing needs left anchor
 
   if (options.showEmpty && pageLines.length === 0) {
     ctx.fillStyle = hexWithAlpha(options.defaultColor, 0.3);
@@ -788,36 +842,50 @@ function renderHandwritingCanvas(
   } else {
     pageLines.forEach((lineChunks, lineIndex) => {
       const lineText = lineChunks.map(c => c.text).join('');
-      let x = options.textAlign === 'center' ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2 : options.textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width : textX;
+      let x = (options.pressureEffect || isMixedFontMain)
+        ? textX
+        : options.textAlign === 'center'
+          ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2
+          : options.textAlign === 'right'
+            ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width
+            : textX;
       const y = firstBaseline + lineIndex * options.lineHeight;
-      if (options.pressureEffect) {
+      if (options.pressureEffect || isMixedFontMain) {
         let charIdx = 0;
+        let wordIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
+            if (ch === ' ') { wordIdx++; }
+            // Resolve actual font for this character
+            const activeFont = isMixedFontMain
+              ? getMixedFont(options.font, charIdx, wordIdx)
+              : options.font;
+            ctx.font = `${options.fontSize}px "${activeFont}", cursive`;
             const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
-            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
-            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;
+            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22;
+            const strokeW = prand(seed * 7 + 5) * 1.1;
+            // Extra variation for mixed fonts
+            const mv = isMixedFontMain ? getMixedVariation(charIdx, wordIdx) : null;
             ctx.save();
-            ctx.translate(x, y + jY);
-            ctx.rotate(jRot);
+            ctx.translate(x, y + jY + (mv?.baselineDrift ?? 0));
+            ctx.rotate(jRot + (mv?.rotation ?? 0));
             // Ink — fill + variable-width stroke so some strokes look heavier
-            // (simulates downstroke pressure vs. light upstrokes)
-            ctx.globalAlpha = inkAlpha;
+            ctx.globalAlpha = Math.max(0.65, Math.min(1, inkAlpha + (mv?.opacityDelta ?? 0)));
             ctx.fillStyle = chunk.color;
             ctx.fillText(ch, 0, 0);
             if (strokeW > 0.2) {
               ctx.lineWidth = strokeW;
               ctx.lineJoin = 'round';
               ctx.strokeStyle = chunk.color;
-              ctx.globalAlpha = inkAlpha * 0.85;
+              ctx.globalAlpha = Math.max(0.55, Math.min(1, (inkAlpha + (mv?.opacityDelta ?? 0)) * 0.85));
               ctx.strokeText(ch, 0, 0);
             }
             ctx.restore();
-            x += w;
+            x += w + (mv?.spacingDelta ?? 0);
             charIdx++;
           }
           x += (options.wordSpacing ?? 0);
@@ -1044,7 +1112,7 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
   // This MUST exactly match the y of ruled lines drawn in PaperBg
   const firstBaseline = firstBaselineOverride ?? (getFirstBaseline(lineHeight) + topOffset);
   const x = PAPER_PAD_LEFT + marginLeft;
-  const maxTextWidth = A4_WIDTH_PX - x - PAPER_PAD_RIGHT;
+  const isMixedSVG = MIXED_FONT_FAMILIES.has(font);
 
   return (
     <svg
@@ -1077,48 +1145,61 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
             const anchor = textAlign === 'center' ? 'middle' : textAlign === 'right' ? 'end' : 'start';
             const wsStyle = { wordSpacing: wordSpacing > 0 ? `${wordSpacing}px` : undefined };
 
-            if (pressureEffect && lineChunks.length > 0) {
+            if ((pressureEffect || isMixedSVG) && lineChunks.length > 0) {
               let charIdx = 0;
-              let prevOffset = 0;
-              return (
-                <g key={idx}>
-                  {/* Ink — drawn character-by-character with deterministic micro-jitter */}
-                  <text
-                    x={tx} y={y}
-                    fontFamily={`'${font}', cursive`}
-                    fontSize={fontSize}
-                    dominantBaseline="alphabetic"
-                    textAnchor={anchor}
-                    xmlSpace="preserve"
-                    style={{ ...wsStyle, paintOrder: 'stroke fill' }}
-                  >
-                    {lineChunks.map((chunk, ci) =>
-                      Array.from(chunk.text).map((ch, k) => {
-                        const seed = idx * 5000 + charIdx;
-                        charIdx++;
-                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;  // ±1.3px
-                        const opacity = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0
-                        const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight
-                        const dy = offset - prevOffset;
-                        prevOffset = offset;
-                        return (
-                          <tspan
-                            key={`${ci}-${k}`}
-                            dy={dy}
-                            fill={chunk.color}
-                            fillOpacity={opacity}
-                            stroke={strokeW > 0.2 ? chunk.color : 'none'}
-                            strokeWidth={strokeW > 0.2 ? strokeW : undefined}
-                            strokeOpacity={strokeW > 0.2 ? opacity * 0.85 : undefined}
-                          >
-                            {ch === ' ' ? '\u00A0' : ch}
-                          </tspan>
-                        );
-                      })
-                    )}
-                  </text>
-                </g>
-              );
+              let wordIdx = 0;
+              // For mixed fonts we can't use tspan dy tricks (each char needs own fontFamily)
+              // so we render each character as a separate <text> element positioned absolutely.
+              // We use a running x accumulator via a ref-like approach.
+              const charElements: React.ReactNode[] = [];
+              let cx = tx; // running x position
+
+              lineChunks.forEach((chunk, ci) => {
+                Array.from(chunk.text).forEach((ch, k) => {
+                  if (ch === ' ') { wordIdx++; }
+                  const seed = idx * 5000 + charIdx;
+                  const activeFont = isMixedSVG
+                    ? getMixedFont(font, charIdx, wordIdx)
+                    : font;
+                  const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;
+                  const jRot   = (prand(seed * 7 + 2) - 0.5) * 0.08;
+                  const opacity = Math.max(0.65, Math.min(1, 0.78 + prand(seed * 7 + 3) * 0.22));
+                  const strokeW = prand(seed * 7 + 5) * 1.1;
+                  const mv = isMixedSVG ? getMixedVariation(charIdx, wordIdx) : null;
+                  const totalDrift = offset + (mv?.baselineDrift ?? 0);
+                  const totalRot = jRot + (mv?.rotation ?? 0);
+                  const totalOpacity = Math.max(0.65, Math.min(1, opacity + (mv?.opacityDelta ?? 0)));
+                  // Use accurate per-font character measurement (measureChar uses shared off-screen canvas)
+                  const charW = measureChar(ch, activeFont, fontSize) + (mv?.spacingDelta ?? 0);
+
+                  charElements.push(
+                    <text
+                      key={`${ci}-${k}`}
+                      x={cx}
+                      y={y + totalDrift}
+                      fontFamily={`'${activeFont}', cursive`}
+                      fontSize={fontSize}
+                      dominantBaseline="alphabetic"
+                      textAnchor="start"
+                      xmlSpace="preserve"
+                      fill={chunk.color}
+                      fillOpacity={totalOpacity}
+                      stroke={strokeW > 0.2 ? chunk.color : 'none'}
+                      strokeWidth={strokeW > 0.2 ? strokeW : undefined}
+                      strokeOpacity={strokeW > 0.2 ? totalOpacity * 0.85 : undefined}
+                      style={{ paintOrder: 'stroke fill' }}
+                      transform={totalRot !== 0 ? `rotate(${(totalRot * 180 / Math.PI).toFixed(2)}, ${cx.toFixed(1)}, ${(y + totalDrift).toFixed(1)})` : undefined}
+                    >
+                      {ch === ' ' ? '\u00A0' : ch}
+                    </text>
+                  );
+                  cx += charW;
+                  charIdx++;
+                });
+                cx += wordSpacing;
+              });
+
+              return <g key={idx}>{charElements}</g>;
             }
 
             return (
@@ -1505,7 +1586,10 @@ Gravity of Sun keeps all planets in orbit.`;
   );
 
   useEffect(() => {
-    waitForFonts().then(() => setFontReadyTick(tick => tick + 1));
+    // For mixed fonts, force-load all fonts in the pool so measureChar works correctly
+    const poolFonts = MIXED_FONT_POOLS[font] ?? [];
+    waitForFonts(poolFonts.length > 0 ? poolFonts : undefined)
+      .then(() => setFontReadyTick(tick => tick + 1));
   }, [font]);
 
   const pages = useMemo<Chunk[][][]>(() => {
@@ -1823,14 +1907,30 @@ Gravity of Sun keeps all planets in orbit.`;
             <div className="space-y-3.5">
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Handwriting Font</label>
-                <select value={font} onChange={e => setFont(e.target.value as FontFamily)}
+                <select value={font} onChange={e => {
+                  const v = e.target.value as FontFamily;
+                  setFont(v);
+                  // Mixed fonts automatically enable the Dynamic Handwriting Engine
+                  if (MIXED_FONT_FAMILIES.has(v)) setPressureEffect(true);
+                }}
                   className="w-full border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm text-slate-800 bg-white/90 shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/15 focus:border-indigo-400">
                   {allFonts.map(f => <option key={f.family} value={f.family}>{f.label}</option>)}
                 </select>
-                <div style={{ fontFamily: `'${font}', cursive`, fontSize: 18, color: defaultColor }}
-                  className="mt-1.5 truncate pl-1">
-                  The quick brown fox…
-                </div>
+                {MIXED_FONT_FAMILIES.has(font) ? (
+                  <div className="mt-1.5 pl-1 space-y-0.5">
+                    <div className="text-xs text-indigo-500 font-semibold">Dynamic Mixed Font — {(MIXED_FONT_POOLS[font] || []).length} handwriting styles blended</div>
+                    <div className="flex gap-1 flex-wrap">
+                      {(MIXED_FONT_POOLS[font] || []).slice(0, 4).map(f => (
+                        <span key={f} style={{ fontFamily: `'${f}', cursive`, fontSize: 15, color: defaultColor }}>{f.split(' ')[0]}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontFamily: `'${font}', cursive`, fontSize: 18, color: defaultColor }}
+                    className="mt-1.5 truncate pl-1">
+                    The quick brown fox…
+                  </div>
+                )}
               </div>
 
 
