@@ -737,23 +737,21 @@ function renderHandwritingCanvas(
             const ch = chunk.text[i];
             const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
-            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
-            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;       // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;    // ±~2.3° tilt
+            const inkAlpha = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
+            const pressure = prand(seed * 7 + 5);                 // 0–1 downstroke pressure
             ctx.save();
             ctx.translate(x, y + jY);
             ctx.rotate(jRot);
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
-            ctx.fillText(ch, 0, 0);
-            if (strokeW > 0.2) {
-              ctx.lineWidth = strokeW;
-              ctx.lineJoin = 'round';
-              ctx.strokeStyle = chunk.color;
-              ctx.globalAlpha = inkAlpha * 0.85;
-              ctx.strokeText(ch, 0, 0);
+            // Heavy downstrokes: slight shadow blur simulates ink spreading into paper
+            if (pressure > 0.6) {
+              ctx.shadowColor = chunk.color;
+              ctx.shadowBlur = (pressure - 0.6) * 1.8; // 0–0.72px blur
             }
+            ctx.fillText(ch, 0, 0);
             ctx.restore();
             x += w;
             charIdx++;
@@ -797,25 +795,21 @@ function renderHandwritingCanvas(
             const ch = chunk.text[i];
             const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;     // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;  // ±~2.3° tilt
-            const inkAlpha = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0 pressure variation
-            const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight on some strokes
+            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;       // ±1.3px baseline jitter
+            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;    // ±~2.3° tilt
+            const inkAlpha = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
+            const pressure = prand(seed * 7 + 5);                 // 0–1 downstroke pressure
             ctx.save();
             ctx.translate(x, y + jY);
             ctx.rotate(jRot);
-            // Ink — fill + variable-width stroke so some strokes look heavier
-            // (simulates downstroke pressure vs. light upstrokes)
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
-            ctx.fillText(ch, 0, 0);
-            if (strokeW > 0.2) {
-              ctx.lineWidth = strokeW;
-              ctx.lineJoin = 'round';
-              ctx.strokeStyle = chunk.color;
-              ctx.globalAlpha = inkAlpha * 0.85;
-              ctx.strokeText(ch, 0, 0);
+            // Heavy downstrokes: slight shadow blur simulates ink spreading into paper
+            if (pressure > 0.6) {
+              ctx.shadowColor = chunk.color;
+              ctx.shadowBlur = (pressure - 0.6) * 1.8; // 0–0.72px blur
             }
+            ctx.fillText(ch, 0, 0);
             ctx.restore();
             x += w;
             charIdx++;
@@ -1056,6 +1050,12 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
         <clipPath id="pageTextClip">
           <rect x={PAPER_PAD_LEFT} y="0" width={A4_WIDTH_PX - PAPER_PAD_LEFT - PAPER_PAD_RIGHT} height={A4_HEIGHT_PX - PAPER_PAD_BOTTOM} />
         </clipPath>
+        {/* Ink-spread blur filters for pen pressure simulation (stdDeviation 0.1–0.4px) */}
+        {pressureEffect && [1,2,3,4].map(n => (
+          <filter key={n} id={`pe-blur-${n}`} x="-5%" y="-5%" width="110%" height="110%">
+            <feGaussianBlur stdDeviation={n * 0.08} />
+          </filter>
+        ))}
       </defs>
       <g clipPath="url(#pageTextClip)">
         {showEmpty && pageLines.length === 0 ? (
@@ -1090,26 +1090,26 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
                     dominantBaseline="alphabetic"
                     textAnchor={anchor}
                     xmlSpace="preserve"
-                    style={{ ...wsStyle, paintOrder: 'stroke fill' }}
+                    style={wsStyle}
                   >
                     {lineChunks.map((chunk, ci) =>
                       Array.from(chunk.text).map((ch, k) => {
                         const seed = idx * 5000 + charIdx;
                         charIdx++;
-                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;  // ±1.3px
-                        const opacity = 0.78 + prand(seed * 7 + 3) * 0.22; // 0.78–1.0
-                        const strokeW = prand(seed * 7 + 5) * 1.1;          // 0–1.1px extra weight
+                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;   // ±1.3px baseline jitter
+                        const opacity = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
+                        const pressure = prand(seed * 7 + 5);                // 0–1 downstroke pressure
                         const dy = offset - prevOffset;
                         prevOffset = offset;
+                        // Heavy downstrokes get a subtle blur filter (ink spreading into paper fibers)
+                        const filterId = pressure > 0.6 ? `pe-blur-${Math.round((pressure - 0.6) * 10)}` : undefined;
                         return (
                           <tspan
                             key={`${ci}-${k}`}
                             dy={dy}
                             fill={chunk.color}
                             fillOpacity={opacity}
-                            stroke={strokeW > 0.2 ? chunk.color : 'none'}
-                            strokeWidth={strokeW > 0.2 ? strokeW : undefined}
-                            strokeOpacity={strokeW > 0.2 ? opacity * 0.85 : undefined}
+                            filter={filterId ? `url(#${filterId})` : undefined}
                           >
                             {ch === ' ' ? '\u00A0' : ch}
                           </tspan>
