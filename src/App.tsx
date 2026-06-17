@@ -47,6 +47,41 @@ function prand(seed: number) {
   return x - Math.floor(x);
 }
 
+// ─── HAND-SET FONT INJECTION ──────────────────────────────────────────────────
+// Injects @font-face for a single font family. Safe to call multiple times.
+function injectFontFace(family: string, src: string, format: string) {
+  const styleId = `custom-font-${family.replace(/[^a-zA-Z0-9]/g, "-")}`;
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `@font-face { font-family: '${family}'; src: url('${src}') format('${format}'); font-display: swap; }`;
+    document.head.appendChild(style);
+  }
+}
+
+// Inject all @font-face rules for a FontInfo (handles both single and HandSet fonts).
+function injectFontInfo(f: import("./types").FontInfo) {
+  if (f.isHandSet && f.variantFamilies && f.variantSrcs) {
+    f.variantFamilies.forEach((vf, i) => {
+      const vs = f.variantSrcs![i];
+      const vfmt = (f.variantFormats && f.variantFormats[i]) || "truetype";
+      if (vs) injectFontFace(vf, vs, vfmt);
+    });
+  } else if (f.src) {
+    injectFontFace(f.family, f.src, f.format || "truetype");
+  } else {
+    // Google Font
+    const linkId = `google-font-${f.family.replace(/[^a-zA-Z0-9]/g, "-")}`;
+    if (!document.getElementById(linkId)) {
+      const link = document.createElement("link");
+      link.id = linkId;
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(f.family)}&display=swap`;
+      document.head.appendChild(link);
+    }
+  }
+}
+
 // ─── EXPORT ANIMATION OVERLAY ────────────────────────────────────────────────
 function ExportAnimation({ type, pageCount = 1 }: { type: 'png' | 'pdf' | false; pageCount?: number }) {
   const [progress, setProgress] = useState(5);
@@ -555,6 +590,8 @@ function renderHandwritingCanvas(
     topicOffsetY?: number;
     pressureEffect?: boolean;
     paperShadow?: boolean;
+    /** Hand Set variant font-family names for per-character variation */
+    handSetVariants?: string[];
   }
 ) {
   const scale = options.scale ?? 2;
@@ -730,39 +767,56 @@ function renderHandwritingCanvas(
     pageLines.forEach((lineChunks, lineIndex) => {
       let x = dblX;
       const y = dblFirstY + lineIndex * options.lineHeight;
-      if (options.pressureEffect) {
+      if (options.pressureEffect || (options.handSetVariants && options.handSetVariants.length > 0)) {
         let charIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
-            const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;       // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;    // ±~2.3° tilt
-            const inkAlpha = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
-            const pressure = prand(seed * 7 + 5);                 // 0–1 downstroke pressure
+            // Hand Set: pick variant font for this character
+            if (options.handSetVariants && options.handSetVariants.length > 0) {
+              const variantFamily = options.handSetVariants[Math.floor(prand(seed * 3 + 7) * options.handSetVariants.length)];
+              ctx.font = `${options.fontSize}px "${variantFamily}", cursive`;
+            } else {
+              ctx.font = `${options.fontSize}px "${options.font}", cursive`;
+            }
+            const w = ctx.measureText(ch).width;
+            const jY = options.pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 : 0;
+            const jRot = options.pressureEffect ? (prand(seed * 7 + 2) - 0.5) * 0.08 : 0;
+            const inkAlpha = options.pressureEffect ? 0.65 + prand(seed * 7 + 3) * 0.35 : 1;
+            const pressure = options.pressureEffect ? prand(seed * 7 + 5) : 0;
             ctx.save();
             ctx.translate(x, y + jY);
             ctx.rotate(jRot);
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
-            // Heavy downstrokes: slight shadow blur simulates ink spreading into paper
             if (pressure > 0.6) {
               ctx.shadowColor = chunk.color;
-              ctx.shadowBlur = (pressure - 0.6) * 1.8; // 0–0.72px blur
+              ctx.shadowBlur = (pressure - 0.6) * 1.8;
             }
             ctx.fillText(ch, 0, 0);
             ctx.restore();
-            x += w;
+            x += w + (ch === ' ' ? (options.wordSpacing ?? 0) : 0);
             charIdx++;
           }
-          x += (options.wordSpacing ?? 0);
         });
       } else {
         lineChunks.forEach(chunk => {
           ctx.fillStyle = chunk.color;
-          ctx.fillText(chunk.text, x, y);
-          x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
+          if (options.wordSpacing) {
+            // Draw per-space-segment so wordSpacing px is added after every space character —
+            // matches wrapper's width model exactly, regardless of font/size/spacing value.
+            const segments = chunk.text.split(/( )/);
+            segments.forEach(seg => {
+              if (seg === '') return;
+              ctx.fillText(seg, x, y);
+              x += ctx.measureText(seg).width;
+              if (seg === ' ') x += options.wordSpacing!;
+            });
+          } else {
+            ctx.fillText(chunk.text, x, y);
+            x += ctx.measureText(chunk.text).width;
+          }
         });
       }
     });
@@ -778,7 +832,7 @@ function renderHandwritingCanvas(
   ctx.font = `${options.fontSize}px "${options.font}", cursive`;
   ctx.textBaseline = 'alphabetic';
   ctx.textAlign = (options.textAlign as CanvasTextAlign) || 'left';
-  if (options.pressureEffect) ctx.textAlign = 'left'; // per-character drawing needs left anchor
+  if (options.pressureEffect || (options.handSetVariants && options.handSetVariants.length > 0)) ctx.textAlign = 'left';
 
   if (options.showEmpty && pageLines.length === 0) {
     ctx.fillStyle = hexWithAlpha(options.defaultColor, 0.3);
@@ -786,41 +840,58 @@ function renderHandwritingCanvas(
   } else {
     pageLines.forEach((lineChunks, lineIndex) => {
       const lineText = lineChunks.map(c => c.text).join('');
-      let x = options.textAlign === 'center' ? A4_WIDTH_PX / 2 - ctx.measureText(lineText).width / 2 : options.textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT - ctx.measureText(lineText).width : textX;
+      const spaceCount = (lineText.match(/ /g) || []).length;
+      const lineWidth = ctx.measureText(lineText).width + spaceCount * (options.wordSpacing ?? 0);
+      let x = options.textAlign === 'center' ? A4_WIDTH_PX / 2 - lineWidth / 2 : options.textAlign === 'right' ? A4_WIDTH_PX - PAPER_PAD_RIGHT - lineWidth : textX;
       const y = firstBaseline + lineIndex * options.lineHeight;
-      if (options.pressureEffect) {
+      if (options.pressureEffect || (options.handSetVariants && options.handSetVariants.length > 0)) {
         let charIdx = 0;
         lineChunks.forEach(chunk => {
           for (let i = 0; i < chunk.text.length; i++) {
             const ch = chunk.text[i];
-            const w = ctx.measureText(ch).width;
             const seed = lineIndex * 5000 + charIdx;
-            const jY = (prand(seed * 7 + 1) - 0.5) * 2.6;       // ±1.3px baseline jitter
-            const jRot = (prand(seed * 7 + 2) - 0.5) * 0.08;    // ±~2.3° tilt
-            const inkAlpha = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
-            const pressure = prand(seed * 7 + 5);                 // 0–1 downstroke pressure
+            // Hand Set: pick variant font per character
+            if (options.handSetVariants && options.handSetVariants.length > 0) {
+              const variantFamily = options.handSetVariants[Math.floor(prand(seed * 3 + 7) * options.handSetVariants.length)];
+              ctx.font = `${options.fontSize}px "${variantFamily}", cursive`;
+            } else {
+              ctx.font = `${options.fontSize}px "${options.font}", cursive`;
+            }
+            const w = ctx.measureText(ch).width;
+            const jY = options.pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 : 0;
+            const jRot = options.pressureEffect ? (prand(seed * 7 + 2) - 0.5) * 0.08 : 0;
+            const inkAlpha = options.pressureEffect ? 0.65 + prand(seed * 7 + 3) * 0.35 : 1;
+            const pressure = options.pressureEffect ? prand(seed * 7 + 5) : 0;
             ctx.save();
             ctx.translate(x, y + jY);
             ctx.rotate(jRot);
             ctx.globalAlpha = inkAlpha;
             ctx.fillStyle = chunk.color;
-            // Heavy downstrokes: slight shadow blur simulates ink spreading into paper
             if (pressure > 0.6) {
               ctx.shadowColor = chunk.color;
-              ctx.shadowBlur = (pressure - 0.6) * 1.8; // 0–0.72px blur
+              ctx.shadowBlur = (pressure - 0.6) * 1.8;
             }
             ctx.fillText(ch, 0, 0);
             ctx.restore();
-            x += w;
+            x += w + (ch === ' ' ? (options.wordSpacing ?? 0) : 0);
             charIdx++;
           }
-          x += (options.wordSpacing ?? 0);
         });
       } else {
         lineChunks.forEach(chunk => {
           ctx.fillStyle = chunk.color;
-          ctx.fillText(chunk.text, x, y);
-          x += ctx.measureText(chunk.text).width + (options.wordSpacing ?? 0);
+          if (options.wordSpacing) {
+            const segments = chunk.text.split(/( )/);
+            segments.forEach(seg => {
+              if (seg === '') return;
+              ctx.fillText(seg, x, y);
+              x += ctx.measureText(seg).width;
+              if (seg === ' ') x += options.wordSpacing!;
+            });
+          } else {
+            ctx.fillText(chunk.text, x, y);
+            x += ctx.measureText(chunk.text).width;
+          }
         });
       }
     });
@@ -858,9 +929,8 @@ function wrapChunksToPageLines(
   defaultColor: LineColor,
   wordSpacing = 0
 ) {
-  // When wordSpacing > 0 each chunk is rendered wider, so shrink the wrapping budget
-  // by a conservative per-word penalty (avg ~5 spaces per line at spacing px each).
-  const effectiveMax = wordSpacing > 0 ? maxWidth - wordSpacing * 5 : maxWidth;
+  // Wrapping now tracks REAL rendered width (text + wordSpacing) token-by-token,
+  // so it stays accurate at any font, font size, or word-spacing value — no guessing.
 
   // Preserve ALL lines including blank ones — empty lines = empty ruled lines in preview/export
   const explicitLines = chunksToLines(chunks);
@@ -889,12 +959,16 @@ function wrapChunksToPageLines(
         const cleanToken = width === 0 ? token.replace(/^\s+/, '') : token;
         if (!cleanToken) return;
 
-        const tokenWidth = measureTextWidth(cleanToken, font, fontSize);
-        if (width > 0 && width + tokenWidth > effectiveMax) {
+        // Real width = glyph width + wordSpacing for each space character in the token
+        // (matches how the renderer actually draws: 1 extra wordSpacing px per space).
+        const spaceCount = (cleanToken.match(/\s/g) || []).length;
+        const tokenWidth = measureTextWidth(cleanToken, font, fontSize) + spaceCount * wordSpacing;
+
+        if (width > 0 && width + tokenWidth > maxWidth) {
           flush();
         }
 
-        if (tokenWidth <= effectiveMax) {
+        if (tokenWidth <= maxWidth) {
           pushChunk(line, cleanToken, chunk.color);
           width += tokenWidth;
           return;
@@ -902,8 +976,8 @@ function wrapChunksToPageLines(
 
         // Break very long words/URLs character-by-character so no text is clipped.
         for (const char of cleanToken) {
-          const charWidth = measureTextWidth(char, font, fontSize);
-          if (width > 0 && width + charWidth > effectiveMax) flush();
+          const charWidth = measureTextWidth(char, font, fontSize) + (char === ' ' ? wordSpacing : 0);
+          if (width > 0 && width + charWidth > maxWidth) flush();
           pushChunk(line, char, chunk.color);
           width += charWidth;
         }
@@ -1029,10 +1103,12 @@ interface HandwritingSvgProps {
   textAlign?: 'left'|'center'|'right';
   firstBaselineOverride?: number;
   pressureEffect?: boolean;
+  /** Hand Set variant font-family names — when set, each char gets a pseudo-random variant */
+  handSetVariants?: string[];
 }
 
 const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
-  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride, pressureEffect = false,
+  pageLines, font, fontSize, marginLeft, lineHeight, wordSpacing = 0, showEmpty, defaultColor, topOffset = 0, textAlign = 'left', firstBaselineOverride, pressureEffect = false, handSetVariants,
 }) => {
   // firstBaseline = y where alphabetic baseline sits (bottom of A,B,C; descenders g,p,y go below)
   // This MUST exactly match the y of ruled lines drawn in PaperBg
@@ -1077,46 +1153,88 @@ const HandwritingSvg: React.FC<HandwritingSvgProps> = ({
             const anchor = textAlign === 'center' ? 'middle' : textAlign === 'right' ? 'end' : 'start';
             const wsStyle = { wordSpacing: wordSpacing > 0 ? `${wordSpacing}px` : undefined };
 
-            if (pressureEffect && lineChunks.length > 0) {
+            // Hand Set: per-character font family from variants (always active when handSetVariants set)
+            const isHandSet = handSetVariants && handSetVariants.length > 0;
+
+            if ((pressureEffect || isHandSet) && lineChunks.length > 0) {
               let charIdx = 0;
               let prevOffset = 0;
               return (
                 <g key={idx}>
-                  {/* Ink — drawn character-by-character with deterministic micro-jitter */}
-                  <text
-                    x={tx} y={y}
-                    fontFamily={`'${font}', cursive`}
-                    fontSize={fontSize}
-                    dominantBaseline="alphabetic"
-                    textAnchor={anchor}
-                    xmlSpace="preserve"
-                    style={wsStyle}
-                  >
-                    {lineChunks.map((chunk, ci) =>
-                      Array.from(chunk.text).map((ch, k) => {
-                        const seed = idx * 5000 + charIdx;
-                        charIdx++;
-                        const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;   // ±1.3px baseline jitter
-                        const opacity = 0.65 + prand(seed * 7 + 3) * 0.35;  // 0.65–1.0 ink density
-                        const pressure = prand(seed * 7 + 5);                // 0–1 downstroke pressure
-                        const dy = offset - prevOffset;
-                        prevOffset = offset;
-                        // Heavy downstrokes get a subtle blur filter (ink spreading into paper fibers)
-                        const filterId = pressure > 0.6 ? `pe-blur-${Math.round((pressure - 0.6) * 10)}` : undefined;
-                        return (
-                          <tspan
-                            key={`${ci}-${k}`}
-                            dy={dy}
-                            fill={chunk.color}
-                            fillOpacity={opacity}
-                            filter={filterId ? `url(#${filterId})` : undefined}
-                          >
-                            {ch === ' ' ? '\u00A0' : ch}
-                          </tspan>
-                        );
-                      })
-                    )}
-                  </text>
+                  {/* Ink — drawn character-by-character with deterministic micro-jitter + HandSet variant */}
+                  {isHandSet ? (
+                    // Hand Set mode: each character gets its own <text> so fontFamily can vary per char
+                    // We use dx/x positioning to keep them in line
+                    <text
+                      x={tx} y={y}
+                      fontSize={fontSize}
+                      dominantBaseline="alphabetic"
+                      textAnchor={anchor}
+                      xmlSpace="preserve"
+                      style={wsStyle}
+                    >
+                      {lineChunks.map((chunk, ci) =>
+                        Array.from(chunk.text).map((ch, k) => {
+                          const seed = idx * 5000 + charIdx;
+                          charIdx++;
+                          const variantFamily = handSetVariants![Math.floor(prand(seed * 3 + 7) * handSetVariants!.length)];
+                          const offset = pressureEffect ? (prand(seed * 7 + 1) - 0.5) * 2.6 : 0;
+                          const opacity = pressureEffect ? 0.65 + prand(seed * 7 + 3) * 0.35 : 1;
+                          const pressure = pressureEffect ? prand(seed * 7 + 5) : 0;
+                          const dy = offset - prevOffset;
+                          prevOffset = offset;
+                          const filterId = pressureEffect && pressure > 0.6 ? `pe-blur-${Math.round((pressure - 0.6) * 10)}` : undefined;
+                          return (
+                            <tspan
+                              key={`${ci}-${k}`}
+                              dy={dy}
+                              fill={chunk.color}
+                              fillOpacity={opacity}
+                              fontFamily={`'${variantFamily}', cursive`}
+                              filter={filterId ? `url(#${filterId})` : undefined}
+                            >
+                              {ch === ' ' ? '\u00A0' : ch}
+                            </tspan>
+                          );
+                        })
+                      )}
+                    </text>
+                  ) : (
+                    // Pressure-only mode (no HandSet): single fontFamily on <text>
+                    <text
+                      x={tx} y={y}
+                      fontFamily={`'${font}', cursive`}
+                      fontSize={fontSize}
+                      dominantBaseline="alphabetic"
+                      textAnchor={anchor}
+                      xmlSpace="preserve"
+                      style={wsStyle}
+                    >
+                      {lineChunks.map((chunk, ci) =>
+                        Array.from(chunk.text).map((ch, k) => {
+                          const seed = idx * 5000 + charIdx;
+                          charIdx++;
+                          const offset = (prand(seed * 7 + 1) - 0.5) * 2.6;
+                          const opacity = 0.65 + prand(seed * 7 + 3) * 0.35;
+                          const pressure = prand(seed * 7 + 5);
+                          const dy = offset - prevOffset;
+                          prevOffset = offset;
+                          const filterId = pressure > 0.6 ? `pe-blur-${Math.round((pressure - 0.6) * 10)}` : undefined;
+                          return (
+                            <tspan
+                              key={`${ci}-${k}`}
+                              dy={dy}
+                              fill={chunk.color}
+                              fillOpacity={opacity}
+                              filter={filterId ? `url(#${filterId})` : undefined}
+                            >
+                              {ch === ' ' ? '\u00A0' : ch}
+                            </tspan>
+                          );
+                        })
+                      )}
+                    </text>
+                  )}
                 </g>
               );
             }
@@ -1173,6 +1291,8 @@ interface PageProps {
   topicOffsetY?: number;
   pressureEffect?: boolean;
   paperShadow?: boolean;
+  /** Hand Set variant font-family names — passed through to HandwritingSvg */
+  handSetVariants?: string[];
 }
 
 const A4Page: React.FC<PageProps> = ({
@@ -1181,6 +1301,7 @@ const A4Page: React.FC<PageProps> = ({
   pageDate = '', onDateChange, showHeader = false, textAlign = 'left',
   topic = '', topicColor, topicFontSize = 20,
   topicOffsetX = 0, topicOffsetY = 0, pressureEffect = false, paperShadow = false,
+  handSetVariants,
 }) => {
   const bg = paperType === 'cream' ? '#fdf8ec' : '#ffffff';
   const textAreaLeft = PAPER_PAD_LEFT + marginLeft;
@@ -1326,6 +1447,7 @@ const A4Page: React.FC<PageProps> = ({
         defaultColor={defaultColor}
         textAlign={textAlign}
         pressureEffect={pressureEffect}
+        handSetVariants={handSetVariants}
         firstBaselineOverride={
           isDouble
             ? DBL_HEADER_H + Math.round(lineHeight * 0.85)           // matches dblTextFirstY in PaperBg
@@ -1421,30 +1543,9 @@ Gravity of Sun keeps all planets in orbit.`;
           script.crossOrigin = 'anonymous';
           document.head.appendChild(script);
         }
-        // Inject @font-face for any custom uploaded fonts (TTF/OTF/WOFF/WOFF2)
+        // Inject @font-face for all custom fonts (including Hand Set variants)
         if (s.customFonts && s.customFonts.length > 0) {
-          s.customFonts.forEach(f => {
-            if (f.src) {
-              // Only inject if not already injected
-              const styleId = `custom-font-${f.family.replace(/\s+/g, '-')}`;
-              if (!document.getElementById(styleId)) {
-                const style = document.createElement('style');
-                style.id = styleId;
-                style.textContent = `@font-face { font-family: '${f.family}'; src: url('${f.src}') format('${f.format || 'truetype'}'); font-display: swap; }`;
-                document.head.appendChild(style);
-              }
-            } else {
-              // Google Font — inject link tag
-              const linkId = `google-font-${f.family.replace(/\s+/g, '-')}`;
-              if (!document.getElementById(linkId)) {
-                const link = document.createElement('link');
-                link.id = linkId;
-                link.rel = 'stylesheet';
-                link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(f.family)}&display=swap`;
-                document.head.appendChild(link);
-              }
-            }
-          });
+          s.customFonts.forEach(f => injectFontInfo(f));
         }
         // Inject custom adNetworkScript from admin panel if set
         if (s.adNetworkScript && !document.getElementById('ad-network-script')) {
@@ -1581,6 +1682,7 @@ Gravity of Sun keeps all planets in orbit.`;
           topicOffsetY,
           pressureEffect,
           paperShadow,
+          handSetVariants: (() => { const fi = allFonts.find(f => f.family === font); return fi?.isHandSet ? fi.variantFamilies : undefined; })(),
         });
       } catch {
         const firstPage = container.querySelector<HTMLElement>('.a4-capture-page');
@@ -1641,6 +1743,7 @@ Gravity of Sun keeps all planets in orbit.`;
             topicOffsetY,
             pressureEffect,
             paperShadow,
+            handSetVariants: (() => { const fi = allFonts.find(f => f.family === font); return fi?.isHandSet ? fi.variantFamilies : undefined; })(),
           });
         } catch {
           const pageEl = fallbackPages[i];
@@ -1825,12 +1928,51 @@ Gravity of Sun keeps all planets in orbit.`;
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Handwriting Font</label>
                 <select value={font} onChange={e => setFont(e.target.value as FontFamily)}
                   className="w-full border border-slate-200/80 rounded-2xl px-3 py-2.5 text-sm text-slate-800 bg-white/90 shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/15 focus:border-indigo-400">
-                  {allFonts.map(f => <option key={f.family} value={f.family}>{f.label}</option>)}
+                  <optgroup label="Built-in Fonts">
+                    {FONTS.map(f => <option key={f.family} value={f.family}>{f.label}</option>)}
+                  </optgroup>
+                  {(adminSettings.customFonts || []).filter(f => !f.isHandSet).length > 0 && (
+                    <optgroup label="Custom Fonts">
+                      {(adminSettings.customFonts || []).filter(f => !f.isHandSet).map(f => (
+                        <option key={f.family} value={f.family}>{f.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {(adminSettings.customFonts || []).filter(f => f.isHandSet).length > 0 && (
+                    <optgroup label="✦ My Handwriting (Hand Sets)">
+                      {(adminSettings.customFonts || []).filter(f => f.isHandSet).map(f => (
+                        <option key={f.family} value={f.family}>{f.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
-                <div style={{ fontFamily: `'${font}', cursive`, fontSize: 18, color: defaultColor }}
-                  className="mt-1.5 truncate pl-1">
-                  The quick brown fox…
-                </div>
+                {/* Font preview — for HandSet fonts cycle variants across preview chars */}
+                {(() => {
+                  const selectedFontInfo = allFonts.find(f => f.family === font);
+                  if (selectedFontInfo?.isHandSet && selectedFontInfo.variantFamilies && selectedFontInfo.variantFamilies.length > 0) {
+                    const variants = selectedFontInfo.variantFamilies;
+                    return (
+                      <div className="mt-1.5 pl-1">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            ✦ Hand Set · {variants.length} variants · character mixing active
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 18, color: defaultColor }} className="truncate">
+                          {'The quick brown fox…'.split('').map((ch, i) => (
+                            <span key={i} style={{ fontFamily: `'${variants[i % variants.length]}', cursive` }}>{ch}</span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ fontFamily: `'${font}', cursive`, fontSize: 18, color: defaultColor }}
+                      className="mt-1.5 truncate pl-1">
+                      The quick brown fox…
+                    </div>
+                  );
+                })()}
               </div>
 
 
@@ -2166,6 +2308,10 @@ Gravity of Sun keeps all planets in orbit.`;
                   topicOffsetY={topicOffsetY}
                   pressureEffect={pressureEffect}
                   paperShadow={paperShadow}
+                  handSetVariants={(() => {
+                    const fi = allFonts.find(f => f.family === font);
+                    return fi?.isHandSet ? fi.variantFamilies : undefined;
+                  })()}
                 />
               </div>
             ))}
@@ -2871,7 +3017,7 @@ async function pushToSupabase(
   } catch { return false; }
 }
 
-// ── UploadFontSection — Upload TTF/OTF/WOFF/WOFF2 custom fonts ────────────────
+// ── UploadFontSection — Upload single font OR Hand Set (multiple variants) ────
 function UploadFontSection({
   settings,
   save,
@@ -2879,140 +3025,262 @@ function UploadFontSection({
   settings: import('./types').AdminSettings;
   save: (patch: Partial<import('./types').AdminSettings>, msg?: string) => void;
 }) {
+  // ── Tab: 'single' or 'handset'
+  const [uploadTab, setUploadTab] = React.useState<'single' | 'handset'>('single');
+
+  // ── Single font state
   const [uploadLabel, setUploadLabel] = React.useState('');
   const [uploadFamily, setUploadFamily] = React.useState('');
   const [uploadStatus, setUploadStatus] = React.useState<string>('');
   const [uploading, setUploading] = React.useState(false);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  const FONT_MIME: Record<string, string> = {
-    ttf: 'font/ttf',
-    otf: 'font/otf',
-    woff: 'font/woff',
-    woff2: 'font/woff2',
-  };
+  // ── Hand Set state
+  const [hsName, setHsName] = React.useState('');          // e.g. "Saaki"
+  const [hsVariants, setHsVariants] = React.useState<{ family: string; src: string; format: 'truetype'|'opentype'|'woff'|'woff2' }[]>([]);
+  const [hsStatus, setHsStatus] = React.useState('');
+  const [hsSaving, setHsSaving] = React.useState(false);
+  const hsFileRef = React.useRef<HTMLInputElement>(null);
+
   const FORMAT_MAP: Record<string, 'truetype' | 'opentype' | 'woff' | 'woff2'> = {
-    ttf: 'truetype',
-    otf: 'opentype',
-    woff: 'woff',
-    woff2: 'woff2',
+    ttf: 'truetype', otf: 'opentype', woff: 'woff', woff2: 'woff2',
   };
 
+  // ── Single font upload handler
   const handleUpload = () => {
     const file = fileRef.current?.files?.[0];
     if (!file) { setUploadStatus('❌ Please choose a font file first.'); return; }
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     if (!['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
-      setUploadStatus('❌ Only TTF, OTF, WOFF, WOFF2 files are supported.');
-      return;
+      setUploadStatus('❌ Only TTF, OTF, WOFF, WOFF2 files are supported.'); return;
     }
     if (file.size > 3 * 1024 * 1024) {
-      setUploadStatus('❌ Font file must be under 3 MB.');
-      return;
+      setUploadStatus('❌ Font file must be under 3 MB.'); return;
     }
     const family = uploadFamily.trim() || file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
     const label = uploadLabel.trim() || family;
     if (!family) { setUploadStatus('❌ Please enter a font family name.'); return; }
-
     setUploading(true);
     setUploadStatus('⏳ Reading font file…');
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      const base64 = (ev.target?.result as string);
-      // base64 is already a data URL: data:font/ttf;base64,...
-      // Inject @font-face immediately for admin preview
-      const styleId = `custom-font-${family.replace(/\s+/g, '-')}`;
-      if (!document.getElementById(styleId)) {
-        const style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = `@font-face { font-family: '${family}'; src: url('${base64}') format('${FORMAT_MAP[ext] || 'truetype'}'); font-display: swap; }`;
-        document.head.appendChild(style);
-      }
-      const newEntry: import('./types').FontInfo = {
-        family,
-        label,
-        src: base64,
-        format: FORMAT_MAP[ext] || 'truetype',
-      };
-      const updated = [...(settings.customFonts || []), newEntry];
+      const base64 = ev.target?.result as string;
+      const entry: import('./types').FontInfo = { family, label, src: base64, format: FORMAT_MAP[ext] || 'truetype' };
+      injectFontInfo(entry);
+      const updated = [...(settings.customFonts || []), entry];
       await save({ customFonts: updated }, `Font "${label}" uploaded — live for all visitors!`);
-      setUploadStatus(`✅ "${label}" added! It will load for every visitor automatically.`);
-      setUploadLabel('');
-      setUploadFamily('');
+      setUploadStatus(`✅ "${label}" added!`);
+      setUploadLabel(''); setUploadFamily('');
       if (fileRef.current) fileRef.current.value = '';
       setUploading(false);
     };
-    reader.onerror = () => {
-      setUploadStatus('❌ Failed to read font file. Please try again.');
-      setUploading(false);
-    };
+    reader.onerror = () => { setUploadStatus('❌ Failed to read font file.'); setUploading(false); };
     reader.readAsDataURL(file);
   };
 
+  // ── Hand Set: add a variant file to staging list
+  const handleAddVariant = () => {
+    const file = hsFileRef.current?.files?.[0];
+    if (!file) { setHsStatus('❌ Choose a font file to add as a variant.'); return; }
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!['ttf', 'otf', 'woff', 'woff2'].includes(ext)) {
+      setHsStatus('❌ Only TTF, OTF, WOFF, WOFF2 supported.'); return;
+    }
+    if (file.size > 3 * 1024 * 1024) { setHsStatus('❌ Each variant must be under 3 MB.'); return; }
+    const variantIdx = hsVariants.length + 1;
+    const baseName = hsName.trim() || 'MyHand';
+    const varFamily = `${baseName}${variantIdx}`;
+    setHsStatus('⏳ Reading…');
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const fmt = FORMAT_MAP[ext] || 'truetype';
+      // Inject immediately so preview works
+      injectFontFace(varFamily, src, fmt);
+      setHsVariants(prev => [...prev, { family: varFamily, src, format: fmt }]);
+      setHsStatus(`✅ Variant ${variantIdx} (${varFamily}) added. Add more or save.`);
+      if (hsFileRef.current) hsFileRef.current.value = '';
+    };
+    reader.onerror = () => setHsStatus('❌ Failed to read file.');
+    reader.readAsDataURL(file);
+  };
+
+  // ── Hand Set: save merged entry
+  const handleSaveHandSet = async () => {
+    const name = hsName.trim();
+    if (!name) { setHsStatus('❌ Enter a Hand Set name (e.g. Saaki).'); return; }
+    if (hsVariants.length < 2) { setHsStatus('❌ Upload at least 2 variant files.'); return; }
+    setHsSaving(true);
+    setHsStatus('⏳ Saving Hand Set…');
+    const entry: import('./types').FontInfo = {
+      family: name,
+      label: `${name} ✦ Hand Set`,
+      isHandSet: true,
+      variantFamilies: hsVariants.map(v => v.family),
+      variantSrcs: hsVariants.map(v => v.src),
+      variantFormats: hsVariants.map(v => v.format),
+    };
+    // Also inject all variants immediately
+    injectFontInfo(entry);
+    const updated = [...(settings.customFonts || []), entry];
+    await save({ customFonts: updated }, `Hand Set "${name}" saved — ${hsVariants.length} variants!`);
+    setHsStatus(`✅ "${name}" Hand Set saved with ${hsVariants.length} variants!`);
+    setHsName(''); setHsVariants([]);
+    setHsSaving(false);
+  };
+
   return (
-    <div className="border border-dashed border-violet-300 rounded-xl p-4 space-y-3 bg-violet-50/40">
-      <p className="text-sm font-bold text-violet-800">🖋️ Upload Custom Calligraphy Font</p>
-      <p className="text-xs text-violet-600">Supports TTF, OTF, WOFF, WOFF2 — stored in Supabase, loads for every visitor automatically.</p>
-
-      <div>
-        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font File</label>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
-          onChange={e => {
-            const f = e.target.files?.[0];
-            if (f && !uploadFamily) {
-              setUploadFamily(f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
-              setUploadLabel(f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
-            }
-          }}
-          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
-        />
-        <p className="text-xs text-slate-400 mt-1">Max 3 MB. Larger fonts may slow page load.</p>
+    <div className="space-y-4">
+      {/* Tab switcher */}
+      <div className="flex gap-2 p-1 bg-slate-100 rounded-xl">
+        <button
+          onClick={() => setUploadTab('single')}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${uploadTab === 'single' ? 'bg-white shadow text-violet-700' : 'text-slate-500'}`}
+        >
+          🖋️ Single Font
+        </button>
+        <button
+          onClick={() => setUploadTab('handset')}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${uploadTab === 'handset' ? 'bg-white shadow text-indigo-700' : 'text-slate-500'}`}
+        >
+          ✦ Hand Set (My Real Handwriting)
+        </button>
       </div>
 
-      <div>
-        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font Family Name <span className="text-slate-400">(used internally)</span></label>
-        <input
-          value={uploadFamily}
-          onChange={e => setUploadFamily(e.target.value)}
-          placeholder="e.g. MyCalligraphy"
-          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-        />
-      </div>
-
-      <div>
-        <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Display Label <span className="text-slate-400">(shown in font picker)</span></label>
-        <input
-          value={uploadLabel}
-          onChange={e => setUploadLabel(e.target.value)}
-          placeholder="e.g. My Calligraphy"
-          className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300"
-        />
-      </div>
-
-      <button
-        onClick={handleUpload}
-        disabled={uploading}
-        className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-xl px-4 py-2.5 text-sm transition-colors"
-      >
-        {uploading ? '⏳ Uploading…' : '📤 Upload Font → Live for Everyone'}
-      </button>
-
-      {uploadStatus && (
-        <p className={`text-xs rounded-xl p-3 ${uploadStatus.startsWith('✅') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⏳') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
-          {uploadStatus}
-        </p>
+      {/* ── SINGLE FONT TAB ── */}
+      {uploadTab === 'single' && (
+        <div className="border border-dashed border-violet-300 rounded-xl p-4 space-y-3 bg-violet-50/40">
+          <p className="text-sm font-bold text-violet-800">🖋️ Upload Custom Font</p>
+          <p className="text-xs text-violet-600">TTF, OTF, WOFF, WOFF2 — stored in Supabase, loads for every visitor.</p>
+          <div>
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font File</label>
+            <input ref={fileRef} type="file"
+              accept=".ttf,.otf,.woff,.woff2"
+              onChange={e => {
+                const f = e.target.files?.[0];
+                if (f && !uploadFamily) {
+                  const name = f.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+                  setUploadFamily(name); setUploadLabel(name);
+                }
+              }}
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+            <p className="text-xs text-slate-400 mt-1">Max 3 MB per file.</p>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Font Family Name</label>
+            <input value={uploadFamily} onChange={e => setUploadFamily(e.target.value)}
+              placeholder="e.g. MyCalligraphy"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">Display Label</label>
+            <input value={uploadLabel} onChange={e => setUploadLabel(e.target.value)}
+              placeholder="e.g. My Calligraphy"
+              className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-300" />
+          </div>
+          <button onClick={handleUpload} disabled={uploading}
+            className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-bold rounded-xl px-4 py-2.5 text-sm transition-colors">
+            {uploading ? '⏳ Uploading…' : '📤 Upload Font → Live for Everyone'}
+          </button>
+          {uploadStatus && (
+            <p className={`text-xs rounded-xl p-3 ${uploadStatus.startsWith('✅') ? 'bg-green-50 text-green-700' : uploadStatus.startsWith('⏳') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+              {uploadStatus}
+            </p>
+          )}
+          {uploadFamily && (
+            <div className="bg-white border border-violet-100 rounded-xl px-4 py-3">
+              <p className="text-xs text-slate-400 mb-1">Preview:</p>
+              <p style={{ fontFamily: `'${uploadFamily}', cursive` }} className="text-2xl text-slate-800">
+                Aa Bb Cc — {uploadLabel || uploadFamily}
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Preview uploaded font */}
-      {uploadFamily && (
-        <div className="bg-white border border-violet-100 rounded-xl px-4 py-3">
-          <p className="text-xs text-slate-400 mb-1">Preview (after upload):</p>
-          <p style={{ fontFamily: `'${uploadFamily}', cursive` }} className="text-2xl text-slate-800">
-            Aa Bb Cc — {uploadLabel || uploadFamily}
-          </p>
+      {/* ── HAND SET TAB ── */}
+      {uploadTab === 'handset' && (
+        <div className="border-2 border-dashed border-indigo-300 rounded-xl p-4 space-y-4 bg-indigo-50/40">
+          <div>
+            <p className="text-sm font-bold text-indigo-800">✦ Hand Set — Your Real Handwriting</p>
+            <p className="text-xs text-indigo-600 mt-1">
+              Upload 2–5 TTF/OTF files of the <strong>same handwriting</strong> written at different times.
+              Writeify will auto-mix them per character so no two letters look identical — exactly like real handwriting.
+            </p>
+          </div>
+
+          {/* Step 1 — Name */}
+          <div>
+            <label className="text-xs font-bold text-slate-600 uppercase tracking-wide block mb-1">
+              Hand Set Name <span className="text-slate-400 normal-case font-normal">(e.g. Saaki, Rohan, MyHand)</span>
+            </label>
+            <input value={hsName} onChange={e => setHsName(e.target.value)}
+              placeholder="e.g. Saaki"
+              className="w-full border border-indigo-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white" />
+          </div>
+
+          {/* Step 2 — Staged variants */}
+          {hsVariants.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Staged Variants ({hsVariants.length})</p>
+              {hsVariants.map((v, i) => (
+                <div key={i} className="flex items-center gap-3 bg-white border border-indigo-100 rounded-xl px-3 py-2">
+                  <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-black flex items-center justify-center flex-shrink-0">{i + 1}</span>
+                  <span style={{ fontFamily: `'${v.family}', cursive` }} className="text-lg text-slate-800 flex-1">
+                    Aa Bb Cc Dd — variant {i + 1}
+                  </span>
+                  <span className="text-xs text-indigo-500 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full">{v.family}</span>
+                  <button onClick={() => setHsVariants(prev => prev.filter((_, idx) => idx !== i))}
+                    className="text-red-400 hover:text-red-600 text-xs font-bold px-1">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add variant file */}
+          <div className="bg-white border border-indigo-100 rounded-xl p-3 space-y-2">
+            <p className="text-xs font-bold text-slate-600">
+              {hsVariants.length === 0 ? 'Add Variant 1 (first scan of your handwriting)' : `Add Variant ${hsVariants.length + 1}`}
+            </p>
+            <input ref={hsFileRef} type="file" accept=".ttf,.otf,.woff,.woff2"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            <button onClick={handleAddVariant}
+              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg px-4 py-2 text-xs transition-colors">
+              + Add This Variant
+            </button>
+          </div>
+
+          {/* Mixed preview */}
+          {hsVariants.length >= 2 && (
+            <div className="bg-white border border-indigo-200 rounded-xl px-4 py-3">
+              <p className="text-xs text-slate-400 mb-2">Live mixed preview (characters cycle through your variants):</p>
+              <div className="text-2xl leading-relaxed">
+                {'The quick brown fox'.split('').map((ch, i) => (
+                  <span key={i} style={{ fontFamily: `'${hsVariants[i % hsVariants.length].family}', cursive` }}>
+                    {ch}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs text-indigo-400 mt-2">
+                ✦ In the actual output each character is deterministically seeded — same text always renders the same way.
+              </p>
+            </div>
+          )}
+
+          {/* Save button */}
+          <button onClick={handleSaveHandSet} disabled={hsSaving || hsVariants.length < 2 || !hsName.trim()}
+            className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:opacity-40 text-white font-bold rounded-xl px-4 py-3 text-sm transition-all shadow-lg shadow-indigo-200">
+            {hsSaving ? '⏳ Saving Hand Set…' : `✦ Save "${hsName || 'Hand Set'}" (${hsVariants.length} variants) → Live for Everyone`}
+          </button>
+          {hsVariants.length < 2 && hsVariants.length > 0 && (
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg p-2 text-center">Add at least one more variant to enable saving.</p>
+          )}
+          {hsStatus && (
+            <p className={`text-xs rounded-xl p-3 ${hsStatus.startsWith('✅') ? 'bg-green-50 text-green-700' : hsStatus.startsWith('⏳') ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+              {hsStatus}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -3456,15 +3724,32 @@ function AdminPage() {
                   <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Custom Fonts</p>
                   <div className="space-y-2">
                     {(settings.customFonts || []).map((f, i) => (
-                      <div key={i} className="flex items-center justify-between px-4 py-2.5 bg-indigo-50 rounded-xl border border-indigo-100">
+                      <div key={i} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${f.isHandSet ? 'bg-gradient-to-r from-indigo-50 to-violet-50 border-indigo-200' : 'bg-indigo-50 border-indigo-100'}`}>
                         <div className="flex items-center gap-2 min-w-0">
-                          <span style={{ fontFamily: `'${f.family}', cursive` }} className="text-lg text-slate-800 shrink-0">Aa</span>
+                          {/* Preview: for HandSet cycle through variant families */}
+                          {f.isHandSet && f.variantFamilies ? (
+                            <div className="flex gap-0.5 shrink-0">
+                              {'Aa'.split('').map((ch, ci) => (
+                                <span key={ci} style={{ fontFamily: `'${f.variantFamilies![ci % f.variantFamilies!.length]}', cursive` }} className="text-lg text-slate-800">{ch}</span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ fontFamily: `'${f.family}', cursive` }} className="text-lg text-slate-800 shrink-0">Aa</span>
+                          )}
                           <div className="min-w-0">
                             <span className="text-sm font-semibold">{f.label}</span>
                             <span className="text-xs text-slate-400 ml-1">({f.family})</span>
-                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full font-semibold ${f.src ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {f.src ? `Uploaded · ${(f.format || 'ttf').toUpperCase()}` : 'Google Font'}
-                            </span>
+                            {f.isHandSet ? (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full font-bold bg-gradient-to-r from-indigo-100 to-violet-100 text-indigo-700">
+                                ✦ Hand Set · {(f.variantFamilies || []).length} variants
+                              </span>
+                            ) : f.src ? (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full font-semibold bg-violet-100 text-violet-700">
+                                Uploaded · {(f.format || 'ttf').toUpperCase()}
+                              </span>
+                            ) : (
+                              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-700">Google Font</span>
+                            )}
                           </div>
                         </div>
                         <button onClick={async () => {
